@@ -118,6 +118,51 @@ async function snapshot() {
   return map;
 }
 
+/**
+ * 查实体归属哪个集成(WebSocket API)。
+ *
+ * 为什么重要:门磁的「失联判据」取决于集成是**轮询**还是**推送**。
+ *   · 轮询(xiaomi_miot):每轮都写一次状态 → last_reported 定期往前推
+ *     → 可以拿它当新鲜度判据,传感器死了会停
+ *   · 推送(小米官方 Xiaomi Home):只在设备主动上报时才写状态
+ *     → 门一直不动的话 last_reported 也不会动,拿它当判据会误报「未知」
+ * REST API 拿不到归属,得走 WebSocket 的 config/entity_registry/list。
+ */
+async function fetchEntityRegistry() {
+  const wsUrl = `${args.host.replace(/^http/, 'ws')}/api/websocket`;
+  return new Promise((resolve) => {
+    const out = new Map();
+    let ws;
+    try {
+      ws = new WebSocket(wsUrl);
+    } catch {
+      resolve(out);
+      return;
+    }
+    const timer = setTimeout(() => {
+      try { ws.close(); } catch { /* ignore */ }
+      resolve(out);
+    }, 15000);
+    ws.onopen = () => ws.send(JSON.stringify({ type: 'auth', access_token: args.token }));
+    ws.onmessage = (ev) => {
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch { return; }
+      if (msg.type === 'auth_ok') {
+        ws.send(JSON.stringify({ id: 1, type: 'config/entity_registry/list' }));
+      } else if (msg.id === 1 && msg.type === 'result') {
+        for (const e of msg.result ?? []) out.set(e.entity_id, e.platform);
+        clearTimeout(timer);
+        try { ws.close(); } catch { /* ignore */ }
+        resolve(out);
+      }
+    };
+    ws.onerror = () => {
+      clearTimeout(timer);
+      resolve(out);
+    };
+  });
+}
+
 async function main() {
   console.log(`HA: ${args.host}`);
   let version = '未知';
@@ -134,6 +179,7 @@ async function main() {
   }
 
   let map = await snapshot();
+  const registry = await fetchEntityRegistry();
 
   const doorwatchSensors = [
     'sensor.doorwatch_it_office_door_state',
@@ -168,15 +214,39 @@ async function main() {
   }
 
   for (const s of candidates) {
+    const platform = registry.get(s.entity_id);
     console.log(`  ${s.entity_id}`);
     console.log(`      ${describe(s)}`);
+    console.log(`      归属集成: ${platform ?? '未知(可能是 YAML 平台或集成未登记)'}`);
     console.log(...stampLines(s));
+    console.log('');
+  }
+
+  const platforms = [...new Set(candidates.map((s) => registry.get(s.entity_id)).filter(Boolean))];
+  if (platforms.length) {
+    console.log('★ 判据怎么选,取决于集成是轮询还是推送:');
+    for (const p of platforms) {
+      if (p === 'xiaomi_miot') {
+        console.log('  · xiaomi_miot —— 轮询云端,每轮都写状态');
+        console.log('    → last_reported 会定期往前推,可以当新鲜度判据,传感器死了会停 ✅');
+      } else if (p === 'xiaomi_home') {
+        console.log('  · xiaomi_home(小米官方)—— 订阅小米云 MQTT,只在设备上报时才写状态');
+        console.log('    → 门一直不动的话 last_reported 也不会动,不能直接当新鲜度判据 ⚠️');
+        console.log('    → 请用 --watch 观察 2~3 分钟确认:若 last_reported 也不动,');
+        console.log('      就把 templates.yaml 里的 STALE_SECONDS 调大(例如 86400),');
+        console.log('      并改用「实体是否 unavailable」来判断失联。');
+      } else {
+        console.log(`  · ${p} —— 不认识这个集成,建议先跑 --watch 120 观察时间戳推进情况`);
+      }
+    }
     console.log('');
   }
 
   if (args.watch > 0) {
     console.log(`--- 观察 ${args.watch} 秒,看哪些时间戳在推进 ---\n`);
     const before = new Map(candidates.map((s) => [s.entity_id, s]));
+    let reportedMoving = 0;
+    let updatedMoving = 0;
     await new Promise((r) => setTimeout(r, args.watch * 1000));
     const after = await snapshot();
 
@@ -191,15 +261,43 @@ async function main() {
       const du = d('last_updated');
       const dr = d('last_reported');
       const fmt = (v) => (v > 0 ? `+${Math.round(v / 1000)} 秒` : '没动');
+      if (dr > 0) reportedMoving++;
+      if (du > 0) updatedMoving++;
       console.log(`${id}`);
       console.log(`   状态        ${b.state} → ${a.state}`);
       console.log(`   last_updated  ${fmt(du)}   ${du > 0 ? '在动' : '冻住了(门没动时正常)'}`);
-      console.log(`   last_reported ${fmt(dr)}   ${dr > 0 ? '在动 ✅ 新鲜度判据用这个' : '没动 ❌ 传感器可能真的失联了'}`);
+      console.log(`   last_reported ${fmt(dr)}   ${dr > 0 ? '在动 ✅' : '没动 ⚠️'}`);
       console.log('');
     }
+
+    console.log('—— 结论 ——');
+    if (reportedMoving > 0) {
+      console.log('集成是**轮询型**:不碰门也会定时上报。');
+      console.log('→ 可以用 last_reported 当新鲜度判据,STALE_SECONDS=180 合适。');
+      console.log('→ templates.yaml 保持默认即可,不用改。');
+    } else if (updatedMoving > 0) {
+      console.log('观察期间状态或属性变了 —— 这轮看不出轮询周期,再等一轮:');
+      console.log('→ node tools/ha-probe.mjs --watch 300');
+    } else {
+      console.log('观察期间三个时间戳全没动 —— 集成是**推送型**(只在设备主动上报时才写状态)。');
+      console.log('→ 门一直不动的话,last_reported 也不会动,拿它当判据会误报「未知」。');
+      console.log('→ 处理办法(templates.yaml):');
+      console.log('     {% set STALE_SECONDS = 86400 %}   ← 调到 1 天,等于关掉这个判据');
+      console.log('     {% set src = states.binary_sensor.你的门磁 %}');
+      console.log('     {% if src in [\'on\',\'off\'] and alive %}   ← alive 恒为 true');
+      console.log('  失联改用「实体是否 unavailable」判断:');
+      console.log('     {% set src = states.binary_sensor.你的门磁 %}');
+      console.log('     {% if src in [\'on\',\'off\'] %}');
+    }
+    console.log('');
   }
 
   console.log('下一步:把确认下来的 entity_id 填进 ha/templates.yaml 的 binary_sensor.aqara_it_office。');
+
+  // WebSocket 对端如果不回 close 帧,socket 会一直挂着,CLI 就退不出。
+  // 先把 stdout 冲干净,再兜一个强制退出(不 unref,否则定时器不会触发)。
+  await new Promise((r) => process.stdout.write('', r));
+  setTimeout(() => process.exit(0), 250);
 }
 
 main().catch((err) => {

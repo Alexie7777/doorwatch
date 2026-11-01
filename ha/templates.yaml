@@ -58,6 +58,22 @@
 #      必须用对象写法 states.entity.id.last_reported。
 #      写成 states('entity.id').last_reported 会在模板里直接报错。
 #
+#  ★★ 如果你的集成是**推送型**(小米官方 Xiaomi Home),本文件的判据要调一下:
+#
+#    推送型只在设备主动上报时才写状态 —— 门一直不动,last_reported 也不动。
+#    这时候 STALE_SECONDS=180 会在「门没动超过 3 分钟」时误报「未知」。
+#    (不会撒谎,但看板几乎永远是未知,等于白做)
+#
+#    先用探针确认你属于哪种:
+#        node tools/ha-probe.mjs --host http://<HA>:8123 --token <TOKEN> --watch 180
+#    输出会直接告诉你「轮询型」还是「推送型」。
+#
+#    如果是推送型,改这两处:
+#        ① STALE_SECONDS 改成 86400(等于把这个判据关掉)
+#        ② 失联交给集成自己处理 —— 集成会在设备掉线时把实体置为 unavailable,
+#           而本模板里 `src in ['on','off']` 这一条已经天然把 unavailable
+#           排除在外,模板会输出 UNKNOWN ✅
+#
 #  ★ 方向开关在下面每扇门的 DOOR_ON_MEANS_OPEN。
 #    用 xiaomi_miot 时默认就是对的:
 #      集成识别到 magnet-sensor 服务 + contact-state 属性时,

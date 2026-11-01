@@ -15,7 +15,7 @@
     "check": "node tools/check-config.mjs && node tools/check-page.mjs docs/architecture.html",
     "check:ports": "node tools/check-ports.mjs",
     "shoot": "node tools/shoot.mjs",
-    "test": "node --disable-warning=ExperimentalWarning test/ha-config.mjs && node --disable-warning=ExperimentalWarning test/freshness.mjs && node --disable-warning=ExperimentalWarning test/smoke.mjs && node --disable-warning=ExperimentalWarning test/ha-path.mjs && node --disable-warning=ExperimentalWarning test/ui.mjs",
+    "test": "node --disable-warning=ExperimentalWarning test/ha-config.mjs && node --disable-warning=ExperimentalWarning test/ha-probe.mjs && node --disable-warning=ExperimentalWarning test/freshness.mjs && node --disable-warning=ExperimentalWarning test/smoke.mjs && node --disable-warning=ExperimentalWarning test/ha-path.mjs && node --disable-warning=ExperimentalWarning test/ui.mjs",
     "test:smoke": "node --disable-warning=ExperimentalWarning test/smoke.mjs",
     "test:ha": "node --disable-warning=ExperimentalWarning test/ha-path.mjs",
     "test:ui": "node --disable-warning=ExperimentalWarning test/ui.mjs",
