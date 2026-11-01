@@ -60,4 +60,45 @@ for (const [rel, kind] of targets) {
   }
 }
 
+// ---------------------------------------------------------------------
+//  README 锚点自检
+//
+//  README 里的目录和正文互链,最容易出的错是「加了一节但目录没更新」
+// 或者「锚点拼错」—— GitHub 上表现为点一下跳到页面顶部,没有任何提示。
+//
+//  slug 算法按 GitHub 的真实规则来:
+//    小写 → 去掉标点(保留字母/数字/中日韩文字/连字符/下划线)→ 空格换成连字符
+//  重复的标题会追加 -1 / -2 后缀。
+// ---------------------------------------------------------------------
+function githubSlug(text) {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\p{M}\-_ ]/gu, '')
+    .replace(/ /g, '-');
+}
+
+const readmePath = path.join(ROOT, 'README.md');
+if (fs.existsSync(readmePath)) {
+  const md = fs.readFileSync(readmePath, 'utf8');
+  const seen = new Map();
+  const slugs = new Set();
+  for (const m of md.matchAll(/^#{2,4}\s+(.+)$/gm)) {
+    let s = githubSlug(m[1].replace(/[`*]/g, ''));
+    const n = seen.get(s) ?? 0;
+    seen.set(s, n + 1);
+    if (n > 0) s = `${s}-${n}`;
+    slugs.add(s);
+  }
+  const links = [...md.matchAll(/\]\(#([^)]+)\)/g)].map((m) => m[1]);
+  const dangling = [...new Set(links.filter((a) => !slugs.has(a)))];
+  if (dangling.length) {
+    console.log('ERR   README.md  锚点悬空');
+    for (const a of dangling) console.log(`        #${a}`);
+    bad++;
+  } else {
+    console.log(`OK    README.md  (${slugs.size} 个标题 / ${links.length} 个内部链接,无悬空)`);
+  }
+}
+
 process.exit(bad ? 1 : 0);
