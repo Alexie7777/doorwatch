@@ -126,6 +126,44 @@ check('automations.yaml 是裸列表', Array.isArray(automationsDoc));
 check('templates.yaml 里没有残留的 template: 包装',
   !templatesDoc?.template, templatesDoc?.template ? '文件里还有 template: 键' : '');
 
+/**
+ * ★ 照抄 HA 源码 homeassistant/components/template/config.py 的
+ *   CONFIG_SECTION_SCHEMA —— `template:` 这个键的值是一个「配置段」列表,
+ *   每个配置段只允许下面这些键。'template' 不在里面,
+ *   所以文件里再套一层就会报:
+ *     'template' is an invalid option for 'template'
+ */
+const HA_SECTION_KEYS = new Set([
+  'actions', 'conditions', 'triggers', 'trigger_variables', 'unique_id', 'variables',
+  'alarm_control_panel', 'binary_sensor', 'button', 'climate', 'cover', 'device_tracker',
+  'event', 'fan', 'image', 'light', 'lock', 'media_player', 'number', 'select',
+  'sensor', 'switch', 'update', 'vacuum', 'water_heater', 'weather',
+]);
+const badSectionKeys = [];
+for (const [i, section] of (Array.isArray(templatesDoc) ? templatesDoc : []).entries()) {
+  for (const k of Object.keys(section ?? {})) {
+    if (!HA_SECTION_KEYS.has(k)) badSectionKeys.push(`第 ${i + 1} 段 → ${k}`);
+  }
+}
+check('templates.yaml 每个配置段的键都在 HA 官方允许的范围内', badSectionKeys.length === 0,
+  badSectionKeys.length ? `非法键: ${badSectionKeys.join(', ')}` : '');
+
+console.log('\n[test] 源实体');
+const templateSensorList = templatesDoc?.[0]?.sensor ?? [];
+const srcEntities = new Set();
+for (const s of templateSensorList) {
+  const m = /states\.([a-z_]+\.[a-z0-9_]+)/.exec(String(s.state ?? ''));
+  if (m) srcEntities.add(m[1]);
+}
+check('templates.yaml 读到的是门磁实体', srcEntities.size > 0, [...srcEntities].join(', '));
+check('两个模板读的是同一个源实体(否则保险丝失效)', srcEntities.size === 1,
+  srcEntities.size > 1 ? `读了 ${srcEntities.size} 个不同的实体` : '');
+check('源实体已填成实际设备(不再是 aqara_it_office 占位符)',
+  [...srcEntities].every((e) => e === 'binary_sensor.isa_dw2hl_b95b_magnet_sensor'),
+  [...srcEntities].join(', '));
+check('源实体不是 MIoT 原始属性 contact_state(极性相反)',
+  ![...srcEntities].some((e) => e.endsWith('_contact_state')));
+
 const templateSensors = (templatesDoc?.[0]?.sensor ?? []).map((s) => s.unique_id);
 check('templates.yaml 定义了门状态模板', templateSensors.includes('doorwatch_it_office_door_state'));
 check('templates.yaml 定义了可读性模板', templateSensors.includes('doorwatch_it_office_door_readable'));

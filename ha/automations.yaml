@@ -17,7 +17,7 @@
 #  ★ 这里出现的 sensor.xxx 全是 templates.yaml 里定义的模板实体,
 #    名字固定,你不用改。
 #    真正需要你改的只有 templates.yaml 一个文件里的三样东西:
-#       · binary_sensor.aqara_it_office  → 换成你的门磁实体 id
+#       · binary_sensor.isa_dw2hl_b95b_magnet_sensor → 门磁实体 id(本仓库已填好)
 #       · DOOR_ON_MEANS_OPEN             → 方向开关(看板显示反了就翻它)
 #       · STALE_SECONDS                 → 多久没更新算失联
 #

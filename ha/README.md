@@ -218,14 +218,14 @@ token 在 HA 里拿:左下角头像 → 安全 → 长期访问令牌 → 创建
 小米门窗感应器 2 在 `xiaomi_miot` 里通常是:
 
 ```
-binary_sensor.aqara_it_office        ← 磁铁状态(有的版本叫 ..._door / ..._magnet)
-binary_sensor.aqara_it_office_motion ← 靠近检测,别用这个
-sensor.aqara_it_office_battery       ← 电量
+binary_sensor.isa_dw2hl_b95b_magnet_sensor ← 磁铁状态,device_class=door ✅ 用这个
+binary_sensor.isa_dw2hl_b95b_contact_state ← MIoT 原始属性,极性相反,别用
+binary_sensor.isa_dw2hl_b95b_motion        ← 靠近检测,别用这个
 ```
 
 > 实体名带设备名后缀,取决于你在米家 App 里给设备起的名字。
-> 实体名和你截图里的不完全一样很正常,把 `templates.yaml` 里的
-> `binary_sensor.aqara_it_office` 换成你实际看到的那个即可。
+> 本仓库的 `templates.yaml` **已经填成上面第一个**,名字对得上就不用改;
+> 不一样就全文件替换这一处(文件里有 2 处生效)。
 
 ### 实体名不重要,重要的是**方向**
 
@@ -300,11 +300,11 @@ doorwatch 容器只该挂 `doorwatch-data:/data`。
 2. 改 `automations.yaml` 里的主题后缀 → 你的 deviceId(见下一节)
 3. **开发者工具 → YAML → 检查配置**,绿勾再重载
 
-> ★ **只需要改 `templates.yaml` 一个文件里的实体名。**
+> ★ **只需要改 `templates.yaml` 一个文件里的实体名**(本仓库已填好,一般不用动)。
 > `automations.yaml` 里出现的 `sensor.doorwatch_it_office_door_state` /
 > `sensor.doorwatch_it_office_door_readable` 是本套模板自己定义的实体,
-> 名字固定,不用动。要改的只有 `templates.yaml` 里那几处
-> `binary_sensor.aqara_it_office`(全局替换一下就行)。
+> 名字固定,不用动。要改的只有 `templates.yaml` 里那 2 处
+> `binary_sensor.isa_dw2hl_b95b_magnet_sensor`(两个模板各一处,全局替换一下就行)。
 >
 > ★ `automations.yaml` 里的主题后缀 `it-office-door` 是 **deviceId**,
 > 和实体名是两回事,别搞混(见第五节)。
@@ -660,14 +660,19 @@ CR2032,官方标称可用 1–2 年。别等它彻底没电 —— 建个低电�
   mode: single
   triggers:
     - trigger: numeric_state
-      entity_id: sensor.aqara_it_office_battery
+      entity_id: binary_sensor.isa_dw2hl_b95b_magnet_sensor
+      attribute: battery_level
       below: 20
   actions:
     - action: notify.mobile_app_xxx
       data:
         title: "门磁电量不足"
-        message: "IT 办公室门磁只剩 {{ states('sensor.aqara_it_office_battery') }}%,记得换电池"
+        message: "IT 办公室门磁只剩 {{ state_attr('binary_sensor.isa_dw2hl_b95b_magnet_sensor', 'battery_level') }}%,记得换电池"
 ```
+
+> `xiaomi_miot` 的电量是**属性**(`battery_level`),不是独立实体。
+> 有些集成会另外暴露一个 `sensor.xxx_battery`,那样就去掉 `attribute:` 那行、
+> 直接盯那个实体。
 
 ### 数据会不会出户
 

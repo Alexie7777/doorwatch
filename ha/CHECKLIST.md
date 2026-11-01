@@ -55,7 +55,7 @@ HA: http://homeassistant.local:8123
 
 === 门磁候选实体(2 个)===
 
-  binary_sensor.aqara_it_office
+  binary_sensor.isa_dw2hl_b95b_magnet_sensor
       state=off  device_class=door  「门磁」
       last_changed  3 分钟前
       last_updated  3 分钟前   ← 状态/属性变化才动
@@ -68,7 +68,7 @@ HA: http://homeassistant.local:8123
 ### 手动找
 
 HA → **开发者工具 → 状态**,搜 `door` / `magnet` / `contact` / `门`。
-记下 `entity_id`(比如 `binary_sensor.aqara_it_office`)。
+记下 `entity_id`(比如 `binary_sensor.isa_dw2hl_b95b_magnet_sensor`)。
 
 ### 验方向
 
@@ -187,11 +187,18 @@ template:
 
 ### 3.3 改 `templates.yaml` 里的实体名
 
-把两处 `binary_sensor.aqara_it_office` 换成第 1 步查到的真名:
+本仓库的 `templates.yaml` **已经填好了**这一处:
 
 ```yaml
-{% set src = states.binary_sensor.aqara_it_office %}   # ← 改这里
+{% set src = states.binary_sensor.isa_dw2hl_b95b_magnet_sensor %}
 ```
+
+> ⚠️ 文件里有 **2 处**生效的 `{% set src = ... %}`,两个模板各一处,
+> 读的是同一个实体 —— 只改一个的话,保险丝就废了。
+> 换设备时全文件替换这一处。
+>
+> ⚠️ 别用 `binary_sensor.isa_dw2hl_b95b_contact_state`:
+> 那是 MIoT 的原始属性(磁铁吸合 = 门关),极性相反而且没有 `device_class`。
 
 方向不对的话,把 `DOOR_ON_MEANS_OPEN = true` 改成 `false`。
 

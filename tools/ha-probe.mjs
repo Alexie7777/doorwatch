@@ -15,7 +15,7 @@
  * 用法:
  *   node tools/ha-probe.mjs --host http://homeassistant.local:8123 --token <TOKEN>
  *   node tools/ha-probe.mjs --host ... --token ... --watch 120
- *   node tools/ha-probe.mjs --host ... --token ... --entity binary_sensor.aqara_it_office
+ *   node tools/ha-probe.mjs --host ... --token ... --entity binary_sensor.isa_dw2hl_b95b_magnet_sensor
  *
  * TOKEN 怎么拿:
  *   HA 左下角头像 → 安全 → 长期访问令牌 → 创建令牌 → 复制那串字符。
@@ -292,7 +292,7 @@ async function main() {
     console.log('');
   }
 
-  console.log('下一步:把确认下来的 entity_id 填进 ha/templates.yaml 的 binary_sensor.aqara_it_office。');
+  console.log('下一步:把确认下来的 entity_id 填进 ha/templates.yaml 的 binary_sensor.isa_dw2hl_b95b_magnet_sensor。');
 
   // WebSocket 对端如果不回 close 帧,socket 会一直挂着,CLI 就退不出。
   // 先把 stdout 冲干净,再兜一个强制退出(不 unref,否则定时器不会触发)。

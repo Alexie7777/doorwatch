@@ -114,6 +114,22 @@
 #    doorwatch 的服务端认识 UNKNOWN:收到就把状态打回"未知"并标记离线,
 #    绝不会继续显示上次的开/关。
 # =====================================================================
+#
+#  ★★ 你的门磁实体已经填好了(照着 HA 里的实际 entity_id 核对过):
+#
+#      binary_sensor.isa_dw2hl_b95b_magnet_sensor
+#
+#    小米门窗感应器 2,device_class=door,HA 里 on = 门开着、off = 门关着。
+#    换设备/换集成时:全文件把这一处替换掉就行(2 处生效 + 注释里的示例)。
+#
+#    ⚠️ 别用 binary_sensor.isa_dw2hl_b95b_contact_state ——
+#       那是 MIoT 的原始属性(磁铁吸合 = 门关),极性和上面那个正好相反,
+#       而且没有 device_class。用错了看板会永远显示反。
+#
+#    ⚠️ 这两个模板读的是**同一个**源实体,别只改一个 ——
+#       automations.yaml 的保险丝拿 readable 的上报时间判死活,
+#       两个模板读不同的门,保险丝就废了。
+# =====================================================================
 
 - sensor:
     # ---------------------------------------------------------------
@@ -122,7 +138,7 @@
     - name: "Doorwatch IT Office Door State"
       unique_id: doorwatch_it_office_door_state
       state: >-
-        {% set src = states.binary_sensor.aqara_it_office %}
+        {% set src = states.binary_sensor.isa_dw2hl_b95b_magnet_sensor %}
         {% set DOOR_ON_MEANS_OPEN = true %}
         {% set STALE_SECONDS = 180 %}
         {% set seen = src.last_reported | default(src.last_updated, true) %}
@@ -142,7 +158,7 @@
       unique_id: doorwatch_it_office_door_readable
       state: >-
         {% set STALE_SECONDS = 180 %}
-        {% set src = states.binary_sensor.aqara_it_office %}
+        {% set src = states.binary_sensor.isa_dw2hl_b95b_magnet_sensor %}
         {% set seen = src.last_reported | default(src.last_updated, true) %}
         {% if src in ['on', 'off'] and seen is defined and seen is not none
               and (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
