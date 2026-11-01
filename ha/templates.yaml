@@ -1,9 +1,23 @@
 # =====================================================================
 #  doorwatch × Home Assistant —— 归一化模板
 #
-#  放法:复制到 HA 的 configuration.yaml 里(顶层),或者
-#        configuration.yaml 里加一行:
-#            template: !include templates.yaml
+#  ★★★ 放法:本文件的**内容就是 `template:` 这个键的值**,本身没有 `template:` 外层。
+#
+#     写法一(容器 / Core,推荐):
+#         # HA 的 configuration.yaml
+#         template: !include templates.yaml
+#         → 本文件直接放成 /config/templates.yaml,内容不用动
+#
+#     写法二(HA OS / Supervised,手动粘贴):
+#         # HA 的 configuration.yaml
+#         template:
+#           ← 把本文件内容整段往右缩进两格,粘在这里
+#
+#     ⚠️ 本文件**不要再套一层 `template:`**。
+#        套了的话 HA 会报这个错:
+#          Invalid config for 'template' at templates.yaml, line 105:
+#          'template' is an invalid option for 'template', check: template
+#        (automations.yaml 本身就是裸列表,和本文件是同一个规矩)
 #
 #  为什么要有这一层:
 #    Home Assistant 里,一个门磁会冒出好几个 binary_sensor,名字还带厂商前缀。
@@ -48,15 +62,14 @@
 #      模板会自动回退到 last_updated。
 #      回退后如果看板一直显示"未知",说明你的 HA 太老,升级即可。
 #      可以在「开发者工具 → 模板」里跑这一行验证:
-#          {{ states('binary_sensor.你的门磁').state }} ← 这个是文本
 #          {{ states.binary_sensor.你的门磁.last_reported }}
-#      第二行报错就说明 HA 没有 last_reported。
+#      报错就说明 HA 没有 last_reported。
 #
 #  ★★ 顺带一个 HA 模板的坑(automation 里也用得上):
 #      states('entity.id')  **只返回状态文本**,不是状态对象。
 #      要拿 last_updated / last_reported 这类属性,
 #      必须用对象写法 states.entity.id.last_reported。
-#      写成 states('entity.id').last_reported 会在模板里直接报错。
+#      写成 states('entity.id').last_updated 会在模板里直接报错。
 #
 #  ★★ 如果你的集成是**推送型**(小米官方 Xiaomi Home),本文件的判据要调一下:
 #
@@ -71,7 +84,7 @@
 #    如果是推送型,改这两处:
 #        ① STALE_SECONDS 改成 86400(等于把这个判据关掉)
 #        ② 失联交给集成自己处理 —— 集成会在设备掉线时把实体置为 unavailable,
-#           而本模板里 `src in ['on','off']` 这一条已经天然把 unavailable
+#           而本文件里 `src in ['on','off']` 这一条已经天然把 unavailable
 #           排除在外,模板会输出 UNKNOWN ✅
 #
 #  ★ 方向开关在下面每扇门的 DOOR_ON_MEANS_OPEN。
@@ -102,73 +115,72 @@
 #    绝不会继续显示上次的开/关。
 # =====================================================================
 
-template:
-  - sensor:
-      # ---------------------------------------------------------------
-      # IT 办公室 —— 归一化后的门状态
-      # ---------------------------------------------------------------
-      - name: "Doorwatch IT Office Door State"
-        unique_id: doorwatch_it_office_door_state
-        state: >-
-          {% set src = states.binary_sensor.aqara_it_office %}
-          {% set DOOR_ON_MEANS_OPEN = true %}
-          {% set STALE_SECONDS = 180 %}
-          {% set seen = src.last_reported | default(src.last_updated, true) %}
-          {% set alive = seen is defined and seen is not none
-                        and (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
-          {% if src in ['on', 'off'] and alive %}
-            {% set is_open = (src == 'on') == DOOR_ON_MEANS_OPEN %}
-            {{ 'OPEN' if is_open else 'CLOSED' }}
-          {% else %}
-            {{ 'UNKNOWN' }}
-          {% endif %}
+- sensor:
+    # ---------------------------------------------------------------
+    # IT 办公室 —— 归一化后的门状态
+    # ---------------------------------------------------------------
+    - name: "Doorwatch IT Office Door State"
+      unique_id: doorwatch_it_office_door_state
+      state: >-
+        {% set src = states.binary_sensor.aqara_it_office %}
+        {% set DOOR_ON_MEANS_OPEN = true %}
+        {% set STALE_SECONDS = 180 %}
+        {% set seen = src.last_reported | default(src.last_updated, true) %}
+        {% set alive = seen is defined and seen is not none
+                      and (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
+        {% if src in ['on', 'off'] and alive %}
+          {% set is_open = (src == 'on') == DOOR_ON_MEANS_OPEN %}
+          {{ 'OPEN' if is_open else 'CLOSED' }}
+        {% else %}
+          {{ 'UNKNOWN' }}
+        {% endif %}
 
-      # ---------------------------------------------------------------
-      # IT 办公室 —— 传感器是否还活着(只由更新时间决定)
-      # ---------------------------------------------------------------
-      - name: "Doorwatch IT Office Door Readable"
-        unique_id: doorwatch_it_office_door_readable
-        state: >-
-          {% set STALE_SECONDS = 180 %}
-          {% set src = states.binary_sensor.aqara_it_office %}
-          {% set seen = src.last_reported | default(src.last_updated, true) %}
-          {% if src in ['on', 'off'] and seen is defined and seen is not none
-                and (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
-            {{ true }}
-          {% else %}
-            {{ false }}
-          {% endif %}
+    # ---------------------------------------------------------------
+    # IT 办公室 —— 传感器是否还活着(只由上报时间决定)
+    # ---------------------------------------------------------------
+    - name: "Doorwatch IT Office Door Readable"
+      unique_id: doorwatch_it_office_door_readable
+      state: >-
+        {% set STALE_SECONDS = 180 %}
+        {% set src = states.binary_sensor.aqara_it_office %}
+        {% set seen = src.last_reported | default(src.last_updated, true) %}
+        {% if src in ['on', 'off'] and seen is defined and seen is not none
+              and (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
+          {{ true }}
+        {% else %}
+          {{ false }}
+        {% endif %}
 
-      # ---------------------------------------------------------------
-      # 机房(第二扇门,照抄上面的写法改实体名和 unique_id 即可)
-      # - name: "Doorwatch Server Room Door State"
-      #   unique_id: doorwatch_server_room_door_state
-      #   state: >-
-      #     {% set src = states.binary_sensor.aqara_server_room %}
-      #     {% set DOOR_ON_MEANS_OPEN = true %}
-      #     {% set STALE_SECONDS = 180 %}
-      #     {% set seen = src.last_reported | default(src.last_updated, true) %}
-      #     {% set alive = seen is defined and seen is not none
-      #                   and (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
-      #     {% if src in ['on', 'off'] and alive %}
-      #       {% set is_open = (src == 'on') == DOOR_ON_MEANS_OPEN %}
-      #       {{ 'OPEN' if is_open else 'CLOSED' }}
-      #     {% else %}
-      #       {{ 'UNKNOWN' }}
-      #     {% endif %}
-      #
-      # - name: "Doorwatch Server Room Door Readable"
-      #   unique_id: doorwatch_server_room_door_readable
-      #   state: >-
-      #     {% set STALE_SECONDS = 180 %}
-      #     {% set src = states.binary_sensor.aqara_server_room %}
-      #     {% set seen = src.last_reported | default(src.last_updated, true) %}
-      #     {% if src in ['on', 'off'] and seen is defined and seen is not none
-      #           and (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
-      #       {{ true }}
-      #     {% else %}
-      #       {{ false }}
-      #     {% endif %}
+    # ---------------------------------------------------------------
+    # 机房(第二扇门,照抄上面的写法改实体名和 unique_id 即可)
+    # - name: "Doorwatch Server Room Door State"
+    #   unique_id: doorwatch_server_room_door_state
+    #   state: >-
+    #     {% set src = states.binary_sensor.aqara_server_room %}
+    #     {% set DOOR_ON_MEANS_OPEN = true %}
+    #     {% set STALE_SECONDS = 180 %}
+    #     {% set seen = src.last_reported | default(src.last_updated, true) %}
+    #     {% set alive = seen is defined and seen is not none
+    #                   and (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
+    #     {% if src in ['on', 'off'] and alive %}
+    #       {% set is_open = (src == 'on') == DOOR_ON_MEANS_OPEN %}
+    #       {{ 'OPEN' if is_open else 'CLOSED' }}
+    #     {% else %}
+    #       {{ 'UNKNOWN' }}
+    #     {% endif %}
+    #
+    # - name: "Doorwatch Server Room Door Readable"
+    #   unique_id: doorwatch_server_room_door_readable
+    #   state: >-
+    #     {% set STALE_SECONDS = 180 %}
+    #     {% set src = states.binary_sensor.aqara_server_room %}
+    #     {% set seen = src.last_reported | default(src.last_updated, true) %}
+    #     {% if src in ['on', 'off'] and seen is defined and seen is not none
+    #           and (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
+    #       {{ true }}
+    #     {% else %}
+    #       {{ false }}
+    #     {% endif %}
 
 # =====================================================================
 #  新增第二扇门时,记得同步改三处:

@@ -251,6 +251,26 @@ automation: !include automations.yaml
 
 把 `ha/` 下的 `templates.yaml`、`automations.yaml` 复制到 HA 的 config 目录。
 
+#### ⚠️ 两个 YAML 都必须是「裸列表」
+
+`!include` 是把文件内容**直接塞到 `template:` / `automation:` 这个键的位置上**。
+所以文件里如果还有一层 `template:`,HA 会报:
+
+```
+Invalid config for 'template' at templates.yaml, line 105:
+'template' is an invalid option for 'template', check: template
+```
+
+本仓库的 `templates.yaml` 和 `automations.yaml` **都已经是裸列表**,直接用,
+别自己再套一层。想手动粘进 `configuration.yaml` 的话,补上键名并整体缩进两格:
+
+```yaml
+template:
+  - sensor:
+      - name: "Doorwatch IT Office Door State"
+        # ...整段往下缩进两格
+```
+
 #### HA 跑在 Docker 里?挂载要写完整的文件路径
 
 ```yaml

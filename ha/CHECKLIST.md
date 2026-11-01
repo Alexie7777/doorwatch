@@ -163,6 +163,28 @@ automation: !include automations.yaml
 改完 `configuration.yaml` 要**重启 HA**;只改 `automations.yaml` 的话在「自动化」页面
 点右上角 ⋮ → 「重新加载」就行。
 
+#### ⚠️ 两个 YAML 都必须是「裸列表」
+
+`!include` 是把文件内容**直接塞到 `template:` / `automation:` 这个键的位置上**。
+所以文件里如果还有一层 `template:`,HA 会报:
+
+```
+Invalid config for 'template' at templates.yaml, line 105:
+'template' is an invalid option for 'template', check: template
+```
+
+本仓库的 `ha/templates.yaml` 和 `ha/automations.yaml` **都已经是裸列表**,
+直接用就行,不要自己再套一层。
+
+如果你想手动粘进 `configuration.yaml` 而不是用 `!include`,记得补上键名并整体缩进两格:
+
+```yaml
+template:
+  - sensor:
+      - name: "Doorwatch IT Office Door State"
+        # ...下面整段往下缩进两格
+```
+
 ### 3.3 改 `templates.yaml` 里的实体名
 
 把两处 `binary_sensor.aqara_it_office` 换成第 1 步查到的真名:

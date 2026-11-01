@@ -109,7 +109,24 @@ check('所有主题的 deviceId 都在 doors.json 里登记过', unknownTopics.l
   unknownTopics.length ? `未登记: ${unknownTopics.join(', ')}` : '');
 
 console.log('\n[test] 模板实体对得上');
-const templateSensors = (templatesDoc?.template?.[0]?.sensor ?? []).map((s) => s.unique_id);
+/**
+ * ★ 两个 YAML 都必须是「裸列表」——
+ *   configuration.yaml 里写的是
+ *       template: !include templates.yaml
+ *       automation: !include automations.yaml
+ *   !include 把文件内容直接塞到 `template:` / `automation:` 这个键的位置上。
+ *   所以文件里如果还有一层 `template:`,HA 会报:
+ *     Invalid config for 'template' at templates.yaml, line N:
+ *     'template' is an invalid option for 'template', check: template
+ *   这是真实踩过的坑,必须挡住。
+ */
+check('templates.yaml 是裸列表(没有多包一层 template:)',
+  Array.isArray(templatesDoc), `顶层类型: ${Array.isArray(templatesDoc) ? '数组' : typeof templatesDoc}`);
+check('automations.yaml 是裸列表', Array.isArray(automationsDoc));
+check('templates.yaml 里没有残留的 template: 包装',
+  !templatesDoc?.template, templatesDoc?.template ? '文件里还有 template: 键' : '');
+
+const templateSensors = (templatesDoc?.[0]?.sensor ?? []).map((s) => s.unique_id);
 check('templates.yaml 定义了门状态模板', templateSensors.includes('doorwatch_it_office_door_state'));
 check('templates.yaml 定义了可读性模板', templateSensors.includes('doorwatch_it_office_door_readable'));
 
