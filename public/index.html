@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1"
+    />
+    <meta name="theme-color" content="#0b0f14" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="IT 办公室" />
+    <meta name="description" content="查看 IT 办公室是否关门,不用白跑一趟" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
+    <link rel="stylesheet" href="/style.css" />
+    <title>IT 办公室状态</title>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar__title">
+        <span class="topbar__logo" aria-hidden="true"></span>
+        <div>
+          <h1>IT 办公室</h1>
+          <p class="topbar__sub" id="subtitle">正在连接…</p>
+        </div>
+      </div>
+      <button class="topbar__refresh" id="refresh" type="button" aria-label="刷新">
+        <span class="dot" id="conn-dot"></span>
+      </button>
+    </header>
+
+    <main id="doors" class="doors">
+      <div class="skeleton" aria-hidden="true"></div>
+      <div class="skeleton" aria-hidden="true"></div>
+    </main>
+
+    <footer class="footer">
+      <p class="footer__hint" id="footer-hint">
+        出门前扫一眼,省下一趟白跑。
+      </p>
+      <div class="footer__row">
+        <button class="link-btn" id="manage-btn" type="button">管理</button>
+        <span class="footer__ver" id="version"></span>
+      </div>
+    </footer>
+
+    <div class="sheet" id="manage-sheet" hidden>
+      <div class="sheet__panel">
+        <div class="sheet__head">
+          <h2>管理</h2>
+          <button class="sheet__close" id="manage-close" type="button" aria-label="关闭">✕</button>
+        </div>
+        <div class="sheet__body" id="manage-body"></div>
+      </div>
+    </div>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

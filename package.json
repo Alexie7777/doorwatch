@@ -1,0 +1,35 @@
+{
+  "name": "doorwatch",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "IT 办公室门磁状态看板 —— 门关没关门,手机上看一眼,不用白跑一趟",
+  "main": "server/src/index.js",
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server/src/index.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch server/src/index.js",
+    "demo": "node tools/demo.mjs",
+    "sim": "node tools/simulate.mjs",
+    "sim:ha": "node tools/simulate.mjs --mode ha",
+    "probe:ha": "node tools/ha-probe.mjs",
+    "check": "node tools/check-config.mjs && node tools/check-page.mjs docs/architecture.html",
+    "shoot": "node tools/shoot.mjs",
+    "test": "node --disable-warning=ExperimentalWarning test/ha-config.mjs && node --disable-warning=ExperimentalWarning test/freshness.mjs && node --disable-warning=ExperimentalWarning test/smoke.mjs && node --disable-warning=ExperimentalWarning test/ha-path.mjs && node --disable-warning=ExperimentalWarning test/ui.mjs",
+    "test:smoke": "node --disable-warning=ExperimentalWarning test/smoke.mjs",
+    "test:ha": "node --disable-warning=ExperimentalWarning test/ha-path.mjs",
+    "test:ui": "node --disable-warning=ExperimentalWarning test/ui.mjs",
+    "test:freshness": "node --disable-warning=ExperimentalWarning test/freshness.mjs",
+    "test:ha-config": "node --disable-warning=ExperimentalWarning test/ha-config.mjs"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "dependencies": {
+    "aedes": "^1.2.0",
+    "mqtt": "^5.16.1"
+  },
+  "devDependencies": {
+    "yaml": "^2.9.1"
+  },
+  "license": "UNLICENSED"
+}

@@ -1,0 +1,1795 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>IT 办公室门磁看板 · 系统架构说明</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #f7f5f0;
+    --card: #ffffff;
+    --line: #e9e3d6;
+    --line-soft: #f0ebe0;
+    --text: #14171e;
+    --muted: #7c7a72;
+    --faint: #a8a49a;
+    --primary: #2f6f5e;
+    --primary-soft: rgba(47, 111, 94, 0.08);
+    --accent: #c97b3f;
+    --accent-soft: rgba(201, 123, 63, 0.1);
+    --warn: #b06367;
+    --warn-soft: rgba(176, 99, 103, 0.1);
+    --ok: #2f6f5e;
+    --radius: 14px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Outfit', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    font-size: 15px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(900px 480px at 12% -8%, rgba(47,111,94,0.05), transparent 62%),
+      radial-gradient(760px 420px at 96% 4%, rgba(201,123,63,0.05), transparent 60%);
+    z-index: 0;
+  }
+
+  .wrap {
+    position: relative;
+    z-index: 1;
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 0 24px 88px;
+  }
+
+  /* ---------- 顶栏 ---------- */
+  .top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 22px 0 0;
+    flex-wrap: wrap;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12.5px;
+    color: var(--muted);
+    letter-spacing: 0.02em;
+  }
+
+  .brand__mark {
+    width: 30px; height: 30px;
+    border-radius: 9px;
+    background: var(--primary);
+    display: grid; place-items: center;
+    color: #fff;
+  }
+
+  .brand__mark svg { width: 17px; height: 17px; }
+
+  .topnav {
+    display: flex;
+    gap: 20px;
+    font-size: 13px;
+    flex-wrap: wrap;
+  }
+
+  .topnav a {
+    color: var(--muted);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    padding-bottom: 2px;
+    transition: color .2s, border-color .2s;
+  }
+  .topnav a:hover { color: var(--primary); border-bottom-color: var(--primary); }
+
+  /* ---------- 首屏 ---------- */
+  .hero { padding: 52px 0 40px; max-width: 780px; }
+
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--primary);
+    background: var(--primary-soft);
+    border: 1px solid rgba(47,111,94,.18);
+    border-radius: 999px;
+    padding: 5px 13px;
+    margin-bottom: 20px;
+  }
+
+  h1 {
+    font-family: 'DM Serif Display', serif;
+    font-weight: 400;
+    font-size: 40px;
+    line-height: 1.18;
+    letter-spacing: -0.008em;
+    margin: 0 0 16px;
+  }
+
+  h1 em {
+    font-style: normal;
+    color: var(--primary);
+  }
+
+  .lede {
+    font-size: 16.5px;
+    color: #3a4256;
+    margin: 0 0 12px;
+    max-width: 660px;
+  }
+
+  .lede--dim { color: var(--muted); font-size: 14.5px; }
+
+  .facts {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-top: 32px;
+  }
+
+  .fact { background: var(--card); padding: 16px 18px; }
+
+  .fact__k {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin-bottom: 6px;
+  }
+
+  .fact__v { font-size: 19px; font-weight: 600; line-height: 1.3; }
+  .fact__v small { font-size: 12px; font-weight: 400; color: var(--muted); }
+
+  /* ---------- 章节 ---------- */
+  section { margin-top: 64px; }
+
+  .sec-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 13px;
+    margin-bottom: 8px;
+  }
+
+  .sec-head__icon {
+    width: 32px; height: 32px;
+    flex: none;
+    border-radius: 9px;
+    background: var(--primary-soft);
+    color: var(--primary);
+    display: grid; place-items: center;
+    margin-top: 3px;
+  }
+  .sec-head__icon svg { width: 17px; height: 17px; }
+
+  h2 {
+    font-family: 'DM Serif Display', serif;
+    font-weight: 400;
+    font-size: 27px;
+    line-height: 1.25;
+    margin: 0;
+    letter-spacing: -0.005em;
+  }
+
+  .sec-sub {
+    color: var(--muted);
+    font-size: 14.5px;
+    margin: 0 0 26px 45px;
+    max-width: 720px;
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 20px 22px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.03);
+  }
+
+  .fig {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 22px;
+    box-shadow: 0 4px 16px -2px rgba(0,0,0,.05);
+    overflow: hidden;
+  }
+
+  .fig svg { display: block; width: 100%; height: auto; }
+
+  .fig__cap {
+    font-size: 12.5px;
+    color: var(--faint);
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--line-soft);
+  }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  .grid-3 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+
+  /* ---------- SVG 图元 ---------- */
+  .band { fill: #fbfaf7; stroke: var(--line); stroke-width: 1; }
+  .band-t { font: 600 11px 'JetBrains Mono', monospace; fill: var(--faint); letter-spacing: .1em; }
+
+  .box { fill: #fff; stroke: var(--line); stroke-width: 1.2; }
+  .box--p { fill: var(--primary-soft); stroke: rgba(47,111,94,.35); }
+  .box--a { fill: var(--accent-soft); stroke: rgba(201,123,63,.38); }
+  .box--w { fill: var(--warn-soft); stroke: rgba(176,99,103,.35); }
+
+  .bt { font: 600 13px 'Outfit', sans-serif; fill: var(--text); }
+  .bs { font: 400 11px 'JetBrains Mono', monospace; fill: var(--muted); }
+  .bt--w { fill: var(--primary); }
+  .bt--a { fill: #9a5c26; }
+  .bt--r { fill: #8d474b; }
+
+  .wire { stroke: var(--faint); stroke-width: 1.4; fill: none; }
+  .wire--p { stroke: var(--primary); stroke-width: 1.6; fill: none; }
+  .wire--a { stroke: var(--accent); stroke-width: 1.4; stroke-dasharray: 5 4; fill: none; }
+  .wire--r { stroke: var(--warn); stroke-width: 1.4; stroke-dasharray: 5 4; fill: none; }
+
+  .flow { font: 500 11.5px 'Outfit', sans-serif; fill: var(--muted); }
+
+  /* ---------- 表 ---------- */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+  }
+
+  th {
+    text-align: left;
+    font-weight: 600;
+    font-size: 11px;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--faint);
+    padding: 0 12px 9px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--line-soft);
+    vertical-align: top;
+  }
+
+  tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: #fcfbf8; }
+
+  code, .mono {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12.5px;
+  }
+
+  td code {
+    background: var(--line-soft);
+    padding: 2px 6px;
+    border-radius: 5px;
+    color: #4a5a52;
+    white-space: nowrap;
+  }
+
+  /* ---------- 时间轴 ---------- */
+  .timeline { list-style: none; padding: 0; margin: 0; position: relative; }
+  .timeline::before {
+    content: '';
+    position: absolute; left: 9px; top: 8px; bottom: 8px;
+    width: 2px; background: var(--primary); opacity: .3;
+  }
+  .timeline li { position: relative; padding: 0 0 20px 34px; }
+  .timeline li:last-child { padding-bottom: 0; }
+  .timeline li::before {
+    content: '';
+    position: absolute; left: 3px; top: 5px;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #fff; border: 2px solid var(--primary);
+  }
+  .timeline > li > b { display: block; font-size: 14px; margin-bottom: 2px; }
+  .timeline p b { font-weight: 600; color: var(--text); }
+  .timeline p { margin: 0; color: var(--muted); font-size: 13.5px; }
+  .timeline .mono { color: var(--primary); background: none; padding: 0; }
+
+  /* ---------- 选型检查 ---------- */
+  .chk-h {
+    font: 600 11px 'JetBrains Mono', monospace;
+    color: var(--primary);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    margin: 0 0 12px;
+  }
+  .chk-list { list-style: none; padding: 0; margin: 0; }
+  .chk-list li {
+    display: grid;
+    grid-template-columns: 15px 1fr;
+    gap: 11px;
+    align-items: start;
+    padding: 7px 0;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: #3a4256;
+    border-bottom: 1px dashed var(--line-soft);
+  }
+  .chk-list li:last-child { border-bottom: none; }
+  .chk-list b { color: var(--text); font-weight: 600; margin-right: .45em; }
+  .chk-box {
+    width: 14px; height: 14px;
+    border: 1.6px solid var(--faint);
+    border-radius: 4px;
+    margin-top: 4px;
+    flex: none;
+  }
+  .chk-h--a { color: var(--primary); }
+  .chk-h--b { color: #9a5c26; }
+  .chk-h--c { color: var(--muted); }
+  .chk-h--d { color: var(--muted); }
+
+  /* ---------- 对比 ---------- */
+  .versus { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+  .vs {
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    border: 1px solid var(--line);
+    background: var(--card);
+  }
+  .vs--bad { background: var(--warn-soft); border-color: rgba(176,99,103,.28); }
+  .vs--good { background: var(--primary-soft); border-color: rgba(47,111,94,.28); }
+
+  .vs h4 {
+    margin: 0 0 10px;
+    font-size: 13px;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    display: flex; align-items: center; gap: 7px;
+  }
+  .vs--bad h4 { color: #8d474b; }
+  .vs--good h4 { color: var(--primary); }
+  .vs p { margin: 0; font-size: 14px; color: #3a4256; }
+  .vs p + p { margin-top: 8px; }
+
+  /* ---------- KV ---------- */
+  .kv { display: grid; grid-template-columns: 132px 1fr; gap: 0; margin: 0; font-size: 13.5px; }
+  .kv dt {
+    color: var(--muted);
+    border-bottom: 1px dashed var(--line);
+    padding: 9px 14px 9px 0;
+  }
+  .kv dd {
+    margin: 0;
+    border-bottom: 1px dashed var(--line);
+    padding: 9px 0;
+  }
+  .kv dt:last-of-type, .kv dd:last-of-type { border-bottom: none; }
+
+  /* ---------- 成本条 ---------- */
+  .bench { display: grid; grid-template-columns: 150px 1fr 76px; gap: 14px; align-items: center; padding: 7px 0; font-size: 13.5px; }
+  .bench-track { height: 15px; background: var(--line-soft); border-radius: 5px; overflow: hidden; }
+  .bench-fill { height: 100%; background: var(--primary); border-radius: 5px; }
+  .bench-fill--a { background: var(--accent); }
+  .bench-val { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: var(--muted); text-align: right; }
+
+  .total {
+    display: flex; align-items: baseline; justify-content: space-between;
+    border-top: 1px solid var(--line);
+    margin-top: 12px; padding-top: 12px;
+    font-weight: 600;
+  }
+  .total span:last-child { font-family: 'JetBrains Mono', monospace; color: var(--primary); font-size: 17px; }
+
+  /* ---------- 提示条 ---------- */
+  .note {
+    display: flex; gap: 12px; align-items: flex-start;
+    border-radius: 12px;
+    padding: 14px 18px;
+    font-size: 13.5px;
+    line-height: 1.6;
+  }
+  .note--warn { background: var(--warn-soft); border: 1px solid rgba(176,99,103,.25); }
+  .note--info { background: var(--primary-soft); border: 1px solid rgba(47,111,94,.22); }
+  .note svg { width: 17px; height: 17px; flex: none; margin-top: 2px; }
+  .note--warn svg { color: var(--warn); }
+  .note--info svg { color: var(--primary); }
+  .note b { font-weight: 600; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  .chip {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--line-soft);
+    color: #4a5a52;
+    border: 1px solid var(--line);
+  }
+
+  footer {
+    margin-top: 72px;
+    padding-top: 22px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: 12.5px;
+    color: var(--faint);
+  }
+
+  @media (max-width: 900px) {
+    .facts { grid-template-columns: repeat(2, 1fr); }
+    .grid-2, .grid-3, .versus { grid-template-columns: 1fr; }
+    h1 { font-size: 31px; }
+    .sec-sub { margin-left: 0; }
+  }
+
+  @media (max-width: 560px) {
+    .wrap { padding: 0 16px 60px; }
+    .facts { grid-template-columns: 1fr; }
+    h1 { font-size: 27px; }
+    h2 { font-size: 23px; }
+    .bench { grid-template-columns: 108px 1fr 62px; font-size: 12.5px; }
+    .kv { grid-template-columns: 104px 1fr; font-size: 12.5px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <div class="brand">
+      <span class="brand__mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M6 21V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v17"/><circle cx="14" cy="12" r="1"/></svg>
+      </span>
+      <span>doorwatch · v1.0.0</span>
+    </div>
+    <nav class="topnav">
+      <a href="#arch">整体架构</a>
+      <a href="#hw">硬件侧</a>
+      <a href="#fw">固件逻辑</a>
+      <a href="#flow">数据流</a>
+      <a href="#state">三态判定</a>
+      <a href="#sw">软件侧</a>
+      <a href="#deploy">部署与成本</a>
+      <a href="#check">选型检查</a>
+      <a href="#ha">备选方案</a>
+    </nav>
+  </div>
+
+  <div class="hero">
+    <span class="eyebrow">系统架构说明</span>
+    <h1>让 IT 办公室的门<em>可以被看见</em></h1>
+    <p class="lede">
+      门磁传感器 → MQTT → 一个网页。老师在手机上花两秒确认"门开着还是关着"，
+      不用再跑到办公室门口才发现扑空。
+    </p>
+    <p class="lede lede--dim">
+      这套东西的核心难点不在"读取开关状态"，而在<b>设备掉线时不能撒谎</b>。
+      下面这份说明会重点讲清楚这件事是怎么处理的。
+    </p>
+
+    <div class="facts">
+      <div class="fact">
+        <div class="fact__k">硬件成本</div>
+        <div class="fact__v">￥32 <small>/ 扇门</small></div>
+      </div>
+      <div class="fact">
+        <div class="fact__k">部署单元</div>
+        <div class="fact__v">1 <small>个容器</small></div>
+      </div>
+      <div class="fact">
+        <div class="fact__k">状态上报</div>
+        <div class="fact__v">60 <small>秒心跳</small></div>
+      </div>
+      <div class="fact">
+        <div class="fact__k">看板刷新</div>
+        <div class="fact__v">SSE <small>零轮询</small></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 整体架构 ================= -->
+  <section id="arch">
+    <div class="sec-head">
+      <span class="sec-head__icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="8" rx="2"/><rect x="2" y="13" width="20" height="8" rx="2"/><path d="M6 7h.01M6 17h.01"/></svg>
+      </span>
+      <h2>整体架构</h2>
+    </div>
+    <p class="sec-sub">
+      纵向分四层。现场层把物理门变成 MQTT 消息，服务层把消息变成可信状态，
+      展示层把状态变成一个不用问人的答案。
+    </p>
+
+    <div class="fig">
+      <svg viewBox="0 0 1160 880" role="img" aria-label="系统四层架构图">
+        <defs>
+          <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#a8a49a"/>
+          </marker>
+          <marker id="ar-p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#2f6f5e"/>
+          </marker>
+          <marker id="ar-r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#b06367"/>
+          </marker>
+        </defs>
+
+        <!-- ① 现场层 -->
+        <rect class="band" x="30" y="28" width="1100" height="206" rx="12"/>
+        <text class="band-t" x="48" y="54">① 现场层 · 门与传感器</text>
+
+        <rect class="box" x="56" y="96" width="172" height="60" rx="9"/>
+        <text class="bt" x="72" y="122">门磁 / 磁力开关</text>
+        <text class="bs" x="72" y="141">dry contact,无源</text>
+
+        <path class="wire" d="M232,126 L286,126" marker-end="url(#ar)"/>
+        <text class="flow" x="238" y="116">并接</text>
+
+        <rect class="box box--a" x="290" y="96" width="176" height="60" rx="9"/>
+        <text class="bt bt--a" x="306" y="122">PC817 光耦隔离</text>
+        <text class="bs" x="306" y="141">¥1 · 防灌 12/24V</text>
+
+        <path class="wire" d="M470,126 L524,126" marker-end="url(#ar)"/>
+
+        <rect class="box box--p" x="528" y="96" width="172" height="60" rx="9"/>
+        <text class="bt bt--w" x="544" y="122">ESP32 + ESPHome</text>
+        <text class="bs" x="544" y="141">1s 去抖 · 60s 心跳</text>
+
+        <path class="wire" d="M704,126 L758,126" marker-end="url(#ar)"/>
+
+        <rect class="box" x="762" y="96" width="172" height="60" rx="9"/>
+        <text class="bt" x="778" y="122">MQTT 客户端</text>
+        <text class="bs" x="778" y="141">publish / will</text>
+
+        <!-- 供电 -->
+        <rect class="box box--w" x="528" y="176" width="172" height="42" rx="8" stroke-dasharray="4 3"/>
+        <text class="bs" x="544" y="202">供电:12/24V ▸ 降压 ▸ 5V</text>
+        <path class="wire--a" d="M614,176 L614,162" marker-end="url(#ar)"/>
+
+        <!-- ① → ② -->
+        <path class="wire--p" d="M848,160 L848,238 L510,238 L510,296" marker-end="url(#ar-p)"/>
+
+        <!-- ② 网络层 -->
+        <rect class="band" x="30" y="258" width="1100" height="122" rx="12"/>
+        <text class="band-t" x="48" y="284">② 网络层 · 校园网</text>
+
+        <rect class="box" x="386" y="300" width="248" height="58" rx="9"/>
+        <text class="bt" x="406" y="326">WiFi 局域网</text>
+        <text class="bs" x="406" y="345">ESP32 ↔ 服务器:1883</text>
+
+        <path class="wire--r" d="M700,330 L790,330" marker-end="url(#ar-r)"/>
+        <text class="flow" x="700" y="320" fill="#b06367">AP 隔离风险</text>
+
+        <rect class="box box--w" x="796" y="300" width="286" height="58" rx="9"/>
+        <text class="bt bt--r" x="812" y="326">手机能否连上,取决于同一网段</text>
+        <text class="bs" x="812" y="345">注意:ESP32 同样受影响</text>
+
+        <!-- ② → ③ -->
+        <path class="wire--p" d="M510,362 L510,400 L171,400 L171,446" marker-end="url(#ar-p)"/>
+
+        <!-- ③ 服务层 -->
+        <rect class="band" x="30" y="404" width="1100" height="250" rx="12"/>
+        <text class="band-t" x="48" y="430">③ 服务层 · 单容器</text>
+
+        <rect class="box box--p" x="56" y="452" width="230" height="92" rx="9"/>
+        <text class="bt bt--w" x="74" y="478">内置 MQTT Broker</text>
+        <text class="bs" x="74" y="497">aedes · 端口 1883</text>
+        <text class="bs" x="74" y="514">遗嘱消息代理</text>
+        <text class="bs" x="74" y="531">retain 保留最后状态</text>
+
+        <path class="wire--p" d="M290,498 L338,498" marker-end="url(#ar-p)"/>
+
+        <rect class="box box--p" x="342" y="452" width="222" height="92" rx="9"/>
+        <text class="bt bt--w" x="360" y="478">Node.js 服务</text>
+        <text class="bs" x="360" y="497">状态机 / REST / SSE</text>
+        <text class="bs" x="360" y="514">open·closed·unknown</text>
+        <text class="bs" x="360" y="531">node:sqlite 免编译</text>
+
+        <path class="wire--p" d="M568,498 L616,498" marker-end="url(#ar-p)"/>
+
+        <rect class="box" x="620" y="452" width="182" height="92" rx="9"/>
+        <text class="bt" x="638" y="478">SQLite</text>
+        <text class="bs" x="638" y="497">doors · events</text>
+        <text class="bs" x="638" y="514">WAL 模式</text>
+        <text class="bs" x="638" y="531">持久化到卷</text>
+
+        <path class="wire--p" d="M806,498 L854,498" marker-end="url(#ar-p)"/>
+
+        <rect class="box" x="858" y="452" width="244" height="92" rx="9"/>
+        <text class="bt" x="876" y="478">静态资源 + PWA</text>
+        <text class="bs" x="876" y="497">HTTPS 自签证书</text>
+        <text class="bs" x="876" y="514">SW 网络优先</text>
+        <text class="bs" x="876" y="531">资源带版本戳</text>
+
+        <!-- 遗嘱回路 -->
+        <path class="wire--r" d="M170,548 L170,592 L440,592 L440,548" fill="none" marker-end="url(#ar-r)"/>
+        <text class="flow" x="196" y="610" fill="#b06367">设备掉电 → Broker 代发 offline → 状态降级为 unknown</text>
+
+        <!-- ④ 用户层 -->
+        <rect class="band" x="30" y="678" width="1100" height="160" rx="12"/>
+        <text class="band-t" x="48" y="704">④ 展示层 · 用户</text>
+
+        <rect class="box" x="300" y="726" width="230" height="64" rx="9"/>
+        <text class="bt" x="318" y="752">手机 / 桌面浏览器</text>
+        <text class="bs" x="318" y="771">SSE 实时推送,零轮询</text>
+
+        <path class="wire--p" d="M415,678 L415,700 L415,726" marker-end="url(#ar-p)"/>
+
+        <rect class="box" x="590" y="726" width="240" height="64" rx="9"/>
+        <text class="bt" x="608" y="752">老师 / 行政同事</text>
+        <text class="bs" x="608" y="771">扫码即用,免登录</text>
+
+        <path class="wire--p" d="M534,758 L586,758" marker-end="url(#ar-p)"/>
+      </svg>
+      <div class="fig__cap">
+        图 1 · 四层架构。竖直方向是数据流:物理开合 → MQTT 消息 → 可信状态 → 人类可读的答案。
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 硬件侧 ================= -->
+  <section id="hw">
+    <div class="sec-head">
+      <span class="sec-head__icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6M15 2v6"/><rect x="6" y="8" width="12" height="14" rx="2"/><path d="M10 13h4M10 17h4"/></svg>
+      </span>
+      <h2>硬件侧:门磁、隔离与供电</h2>
+    </div>
+    <p class="sec-sub">
+      门禁系统里已经有的门磁可以直接复用,不用再买传感器。
+      但必须解决两件事:<b>电平隔离</b>(否则烧板)和<b>电压转换</b>(12/24V → 3.3V)。
+    </p>
+
+    <div class="fig">
+      <svg viewBox="0 0 1160 500" role="img" aria-label="门禁门磁复用接线原理图">
+        <defs>
+          <marker id="w" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#7c7a72"/>
+          </marker>
+        </defs>
+
+        <!-- 分区标题 -->
+        <text class="band-t" x="30" y="30">控制器侧 · 12/24V 域</text>
+        <text class="band-t" x="700" y="30">ESP32 侧 · 3.3V 域</text>
+        <line x1="660" y1="40" x2="660" y2="440" stroke="#e9e3d6" stroke-width="1.5" stroke-dasharray="6 5"/>
+        <text class="flow" x="672" y="430" fill="#c97b3f">↑ 光耦隔离,两边不共地</text>
+
+        <!-- 门禁控制器 -->
+        <rect class="box" x="30" y="110" width="186" height="120" rx="9"/>
+        <text class="bt" x="48" y="138">门禁控制器</text>
+        <text class="bs" x="48" y="158">DOOR 输入</text>
+        <text class="bs" x="48" y="176">内部上拉 12/24V</text>
+        <text class="bs" x="48" y="194">GND</text>
+        <text class="bs" x="48" y="216" fill="#b06367">⚠ 门磁线有 12/24V</text>
+
+        <!-- 门磁触点(横向常开符号) -->
+        <line class="wire" x1="216" y1="148" x2="303" y2="148" marker-end="url(#w)"/>
+        <circle cx="311" cy="148" r="7" fill="#fff" stroke="#7c7a72" stroke-width="1.6"/>
+        <circle cx="343" cy="148" r="7" fill="#fff" stroke="#7c7a72" stroke-width="1.6"/>
+        <line class="wire" x1="350" y1="148" x2="392" y2="148"/>
+        <text class="bs" x="298" y="176">门磁触点</text>
+        <text class="bs" x="290" y="191">门关时闭合</text>
+
+        <!-- 电阻 -->
+        <line class="wire" x1="366" y1="148" x2="392" y2="148"/>
+        <path d="M392,148 l10,-9 l10,18 l10,-18 l10,18 l10,-18 l10,18 l10,-9" fill="none" stroke="#7c7a72" stroke-width="1.6"/>
+        <line class="wire" x1="462" y1="148" x2="486" y2="148"/>
+        <text class="bs" x="398" y="132">R1</text>
+        <text class="bs" x="380" y="176">12V 用 1kΩ</text>
+        <text class="bs" x="380" y="191">24V 用 2.2kΩ</text>
+
+        <!-- LED -->
+        <line class="wire" x1="486" y1="148" x2="510" y2="148"/>
+        <path d="M510,130 L510,166 L540,148 z" fill="#fff" stroke="#7c7a72" stroke-width="1.6"/>
+        <line class="wire" x1="540" y1="130" x2="540" y2="166"/>
+        <path d="M550,134 l11,-8" stroke="#c97b3f" stroke-width="1.5" fill="none"/>
+        <path d="M550,162 l11,8" stroke="#c97b3f" stroke-width="1.5" fill="none"/>
+        <text class="bs" x="506" y="188">PC817 LED</text>
+        <text class="bs" x="500" y="203">12V ≈ 10mA</text>
+
+        <!-- 光耦 -->
+        <rect class="box box--a" x="596" y="100" width="72" height="130" rx="9"/>
+        <text class="bt bt--a" x="614" y="126">PC817</text>
+        <line x1="632" y1="104" x2="632" y2="226" stroke="#e9e3d6" stroke-width="1.2" stroke-dasharray="4 4"/>
+        <line class="wire" x1="540" y1="148" x2="596" y2="148"/>
+        <line class="wire" x1="540" y1="212" x2="596" y2="212"/>
+        <text class="bs" x="548" y="240">GND</text>
+
+        <!-- 3.3V 侧 -->
+        <line class="wire" x1="668" y1="132" x2="700" y2="132"/>
+        <circle cx="706" cy="132" r="4" fill="#7c7a72"/>
+        <line class="wire" x1="668" y1="212" x2="700" y2="212"/>
+        <circle cx="706" cy="212" r="4" fill="#7c7a72"/>
+
+        <!-- 上拉 -->
+        <line class="wire" x1="706" y1="132" x2="706" y2="122"/>
+        <rect x="697" y="92" width="18" height="30" rx="2" fill="#fff" stroke="#7c7a72" stroke-width="1.6"/>
+        <line class="wire" x1="706" y1="92" x2="706" y2="78"/>
+        <text class="bs" x="722" y="80">3V3</text>
+        <text class="bs" x="722" y="112">R2 4.7kΩ</text>
+
+        <!-- GPIO -->
+        <line class="wire" x1="706" y1="132" x2="790" y2="132"/>
+        <rect class="box box--p" x="794" y="108" width="150" height="60" rx="9"/>
+        <text class="bt bt--w" x="810" y="134">ESP32 GPIO21</text>
+        <text class="bs" x="810" y="153">输入,无内部上拉</text>
+        <line class="wire" x1="706" y1="212" x2="706" y2="300" marker-end="url(#w)"/>
+        <text class="bs" x="716" y="292">GND</text>
+
+        <!-- 逻辑说明 -->
+        <rect class="box" x="790" y="200" width="300" height="100" rx="9"/>
+        <text class="bt" x="808" y="226">逻辑关系</text>
+        <text class="bs" x="808" y="248">门关 → 触点闭合 → LED 亮 → GPIO 低</text>
+        <text class="bs" x="808" y="266">门开 → 触点断开 → LED 灭 → GPIO 高</text>
+        <text class="bs" x="808" y="288" fill="#2f6f5e">与 doorwatch 约定一致:高=开,低=关</text>
+
+        <!-- 供电链 -->
+        <rect class="band" x="30" y="288" width="600" height="152" rx="12"/>
+        <text class="band-t" x="48" y="314">供电链</text>
+
+        <rect class="box box--w" x="52" y="330" width="150" height="54" rx="8"/>
+        <text class="bt bt--w" x="66" y="354">门禁 DC 输入</text>
+        <text class="bs" x="66" y="372">12V / 24V 常电</text>
+
+        <path class="wire" d="M206,357 L238,357" marker-end="url(#w)"/>
+
+        <rect class="box box--a" x="242" y="330" width="168" height="54" rx="8"/>
+        <text class="bt bt--a" x="256" y="354">降压模块</text>
+        <text class="bs" x="256" y="372">MP1584EN · 12V→5V</text>
+
+        <path class="wire" d="M414,357 L446,357" marker-end="url(#w)"/>
+
+        <rect class="box box--p" x="450" y="330" width="160" height="54" rx="8"/>
+        <text class="bt bt--w" x="464" y="354">ESP32 5V/VIN</text>
+        <text class="bs" x="464" y="372">并 10uF 到 GND</text>
+
+        <text class="flow" x="52" y="410" fill="#b06367">⚠ 12/24V 不可直入 5V/VIN;5V 不可入 3V3</text>
+        <text class="flow" x="52" y="428" fill="#b06367">⚠ 不取电锁两端电压 —— 部分门锁为脉冲供电</text>
+      </svg>
+      <div class="fig__cap">
+        图 2 · 复用门禁门磁的原理图。左半边是门禁的 12/24V 域,右半边是 ESP32 的 3.3V 域,
+        PC817 把两者彻底隔开,门禁系统照常工作,互不干扰。
+      </div>
+    </div>
+
+    <div class="note note--warn" style="margin-top:16px">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+      <div>
+        <b>动手前务必先量三处电压。</b>
+        ① 门禁电源是 12V 还是 24V? ② 门磁两个端子对控制器 GND 的电压 ——
+        门关≈0V、门开≈12/24V 说明控制器有上拉,必须加光耦;
+        两种状态都≈0V 才是纯干接点。
+        ③ 门禁电源带不带 UPS 后备?带的话最理想,停电时看板跟着门禁一起活。
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 固件逻辑 ================= -->
+  <section id="fw">
+    <div class="sec-head">
+      <span class="sec-head__icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6M15 2v6"/><rect x="6" y="8" width="12" height="14" rx="2"/><path d="M10 13h4M10 17h4"/></svg>
+      </span>
+      <h2>ESP32 固件逻辑</h2>
+    </div>
+    <p class="sec-sub">
+      固件本身<b>不写 C 代码</b>。我们写的是一份 ESPHome 的 YAML 声明,ESPHome 把它编译成固件烧进 ESP32。
+      下面这份 YAML 不到 130 行,里面没有一行 if/else —— 全部行为都由配置项决定。
+    </p>
+
+    <div class="grid-2" style="margin-bottom:18px;grid-template-columns:1.05fr 1fr">
+      <div class="card">
+        <h3 style="font-size:15px;margin:0 0 4px;font-weight:600">启动阶段</h3>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 16px">上电到进入稳态,一共五步。首次烧录后手机连 <code>IT-Door-Setup</code> 热点配网,就发生在第 2 步。</p>
+        <ol class="timeline">
+          <li>
+            <b>上电启动</b>
+            <p>ESPHome 运行时起来,初始化 GPIO 与 WiFi 协议栈</p>
+          </li>
+          <li>
+            <b>连 WiFi</b>
+            <p>连不上就自动开热点 <code>IT-Door-Setup</code>,手机连上配网即可</p>
+          </li>
+          <li>
+            <b>连上 Broker</b>
+            <p>立刻发 <code>birth_message = online</code>,宣告自己上线</p>
+          </li>
+          <li>
+            <b>上报当前状态</b>
+            <p>不管门此刻开着还是关着,先把<b>此刻的真实状态</b>发一次(retain)</p>
+          </li>
+          <li>
+            <b>进入稳态</b>
+            <p>启动 60 秒心跳定时器,此后只做两件事:门变了就报、每分钟证明自己活着</p>
+          </li>
+        </ol>
+      </div>
+
+      <div class="card">
+        <h3 style="font-size:15px;margin:0 0 4px;font-weight:600">关键分工</h3>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 16px">这是整套设计里最容易误解的一点。</p>
+
+        <div style="border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px;background:var(--primary-soft)">
+          <div style="font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--primary);font-weight:600;margin-bottom:8px">ESP32 负责</div>
+          <div style="font-size:14px;color:#3a4256;line-height:1.7">
+            · 如实汇报 <b>"我看到的门是开还是关"</b><br>
+            · 定期汇报 <b>"我还活着"</b><br>
+            · <b>不判断</b>自己算不算在线
+          </div>
+        </div>
+
+        <div style="border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--accent-soft)">
+          <div style="font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:#9a5c26;font-weight:600;margin-bottom:8px">服务端负责</div>
+          <div style="font-size:14px;color:#3a4256;line-height:1.7">
+            · 判断这条消息 <b>现在还能不能信</b><br>
+            · 决定显示开门 / 关门 / 未知<br>
+            · 设备瘦一点、少一点逻辑,就少一处出错的地方
+          </div>
+        </div>
+
+        <p style="font-size:13px;color:var(--muted);margin:14px 0 0">
+          所以把 ESP32 换成别的方案(门禁系统推事件、Zigbee 传感器),
+          服务端的判定逻辑<b>一行都不用改</b>。
+        </p>
+      </div>
+    </div>
+
+    <div class="fig">
+      <svg viewBox="0 0 1160 360" role="img" aria-label="ESP32 固件三条上报路径">
+        <defs>
+          <marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#a8a49a"/>
+          </marker>
+        </defs>
+
+        <!-- 通道 1 -->
+        <text class="band-t" x="40" y="34">① 门状态上报</text>
+        <rect class="box" x="40" y="48" width="200" height="64" rx="9"/>
+        <text class="bt" x="58" y="74">门磁触点变化</text>
+        <text class="bs" x="58" y="93">GPIO 电平跳变</text>
+
+        <path class="wire--p" d="M244,80 L296,80" marker-end="url(#ar-p)"/>
+
+        <rect class="box" x="300" y="48" width="200" height="64" rx="9"/>
+        <text class="bt" x="318" y="74">1 秒去抖</text>
+        <text class="bs" x="318" y="93">filters: delayed_on/off</text>
+
+        <path class="wire--p" d="M504,80 L556,80" marker-end="url(#ar-p)"/>
+
+        <rect class="box box--p" x="560" y="48" width="200" height="64" rx="9"/>
+        <text class="bt bt--w" x="578" y="74">publish state</text>
+        <text class="bs" x="578" y="93">OPEN / CLOSED · retain</text>
+
+        <path class="wire--p" d="M764,80 L816,80" marker-end="url(#ar-p)"/>
+
+        <rect class="box" x="820" y="48" width="200" height="64" rx="9"/>
+        <text class="bt" x="838" y="74">Broker 收到</text>
+        <text class="bs" x="838" y="93">转发给服务端</text>
+
+        <!-- 通道 2 -->
+        <text class="band-t" x="40" y="140">② 心跳</text>
+        <rect class="box" x="40" y="154" width="200" height="64" rx="9"/>
+        <text class="bt" x="58" y="180">60 秒定时器</text>
+        <text class="bs" x="58" y="199">interval: 60s</text>
+
+        <path class="wire--p" d="M244,186 L296,186" marker-end="url(#ar-p)"/>
+
+        <rect class="box box--p" x="300" y="154" width="200" height="64" rx="9"/>
+        <text class="bt bt--w" x="318" y="180">publish heartbeat</text>
+        <text class="bs" x="318" y="199">"alive" · 不 retain</text>
+
+        <path class="wire--p" d="M504,186 L816,186" marker-end="url(#ar-p)"/>
+
+        <rect class="box" x="820" y="154" width="200" height="64" rx="9"/>
+        <text class="bt" x="838" y="180">Broker 收到</text>
+        <text class="bs" x="838" y="199">刷新最后在线时间</text>
+
+        <!-- 通道 3 -->
+        <text class="band-t" x="40" y="246">③ 掉线(设备已经死了)</text>
+        <rect class="box box--w" x="40" y="260" width="200" height="64" rx="9"/>
+        <text class="bt bt--r" x="58" y="286">断电 / 断网</text>
+        <text class="bs" x="58" y="305">设备已无响应</text>
+
+        <path class="wire--r" d="M244,292 L296,292" marker-end="url(#ar-r)"/>
+
+        <rect class="box box--w" x="300" y="260" width="200" height="64" rx="9"/>
+        <text class="bt bt--r" x="318" y="286">遗嘱已提前登记</text>
+        <text class="bs" x="318" y="305">shutdown_message</text>
+
+        <path class="wire--r" d="M504,292 L816,292" marker-end="url(#ar-r)"/>
+
+        <rect class="box box--w" x="820" y="260" width="200" height="64" rx="9"/>
+        <text class="bt bt--r" x="838" y="286">Broker 代发 offline</text>
+        <text class="bs" x="838" y="305">设备不在,但 Broker 知道</text>
+
+        <text class="flow" x="40" y="348">三条路径最终都汇到服务端 —— 由服务端决定这条信息现在能不能信。</text>
+      </svg>
+      <div class="fig__cap">
+        图 4 · 固件的三条上报路径。注意 ③:设备死后是 <b>Broker</b> 发的 offline,不是设备自己发的 ——
+        设备都死了,自然没法发消息。
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h3 style="font-size:15px;margin:0 0 14px;font-weight:600">YAML 配置 → 实际行为对照</h3>
+      <table>
+        <thead>
+          <tr><th>YAML 片段</th><th>干了什么</th><th>对应上图</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>pullup: true</code></td><td>门磁断开时 GPIO 被内部上拉拉高,不用外挂电阻</td><td>硬件侧</td></tr>
+          <tr><td><code>filters: delayed_on/off: 1000ms</code></td><td>门被风吹、被推一把会抖好几秒,滤掉</td><td>① 去抖</td></tr>
+          <tr><td><code>payload_on: "OPEN"</code></td><td>状态变化时自动发消息,不用写任何代码</td><td>① publish</td></tr>
+          <tr><td><code>retain: true</code></td><td>保留最后状态,服务重启后一订阅就能拿到</td><td>① publish</td></tr>
+          <tr><td><code>birth_message: online</code></td><td>连上 Broker 的瞬间宣告自己上线</td><td>启动 ③</td></tr>
+          <tr><td><code>shutdown_message: offline</code></td><td>登记遗嘱,设备死后由 Broker 代发离线</td><td>③ 掉线</td></tr>
+          <tr><td><code>interval: 60s</code></td><td>定时器,周期性地证明自己还活着</td><td>② 心跳</td></tr>
+          <tr><td><code>captive_portal</code> + <code>ap:</code></td><td>连不上 WiFi 时开热点,手机连上配网</td><td>启动 ②</td></tr>
+          <tr><td><code>status_led</code></td><td>板载 LED 当状态指示,配网时能确认设备活着</td><td>辅助</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note note--info" style="margin-top:16px">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+      <div>
+        <b>为什么心跳不 retain?</b>
+        <code>state</code> 是"当前是什么状态",值得保留;<code>heartbeat</code> 是"我刚才还活着",
+        保留一份过期的"活着"没有意义,反而会让服务端误判。新的心跳到了自然覆盖旧的。
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 数据流 ================= -->
+  <section id="flow">
+    <div class="sec-head">
+      <span class="sec-head__icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="m4 12 4-4 4 4 4-4 4 4"/><path d="M4 20h16"/></svg>
+      </span>
+      <h2>数据流:从推门到看板变色</h2>
+    </div>
+    <p class="sec-sub">
+      门被推开到手机上变色,中间发生的事。整条链路是推模型,看板不需要问任何东西。
+    </p>
+
+    <div class="grid-2">
+      <div class="card">
+        <ol class="timeline">
+          <li>
+            <b>物理开合</b>
+            <p>门扇移动 → 磁力开关触点断开 → 控制器侧检测到门开</p>
+          </li>
+          <li>
+            <b>ESP32 感知</b>
+            <p>GPIO 电平变化 → 经 1 秒去抖过滤(防止风吹、推挤造成的抖动)</p>
+          </li>
+          <li>
+            <b>发布状态</b>
+            <p><span class="mono">doorwatch/it-office-door/state = "OPEN"</span><br>
+            QoS 1 · <b>retain=true</b> —— 服务器重启后订阅即得最后状态</p>
+          </li>
+          <li>
+            <b>Broker 转发</b>
+            <p>内置 aedes broker 收到并转发给订阅者;同时记录 retain 值</p>
+          </li>
+          <li>
+            <b>服务落库 + 广播</b>
+            <p>写入 SQLite events 表(仅状态<em>真的变化</em>时才记一条)→ SSE 广播全量状态</p>
+          </li>
+          <li>
+            <b>看板重绘</b>
+            <p>所有打开的页面通过 SSE 收到新快照 → 重绘卡片颜色。<b>不刷新页面、不轮询。</b></p>
+          </li>
+        </ol>
+      </div>
+
+      <div class="card">
+        <h3 style="font-size:15px;margin:0 0 14px;font-weight:600">MQTT 主题契约</h3>
+        <table>
+          <thead>
+            <tr><th>主题</th><th>载荷</th><th>作用</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>…/state</code></td>
+              <td><code>OPEN</code> / <code>CLOSED</code></td>
+              <td>门状态变化,<b>retain</b></td>
+            </tr>
+            <tr>
+              <td><code>…/status</code></td>
+              <td><code>online</code> / <code>offline</code></td>
+              <td>遗嘱消息,掉线时由 Broker 代发</td>
+            </tr>
+            <tr>
+              <td><code>…/heartbeat</code></td>
+              <td><code>alive</code></td>
+              <td>每 60 秒一跳,判断设备是否活着</td>
+            </tr>
+            <tr>
+              <td><code>…/battery</code></td>
+              <td>百分比</td>
+              <td>仅电池版上报,用于低电量提醒</td>
+            </tr>
+          </tbody>
+        </table>
+        <p style="font-size:13px;color:var(--muted);margin:14px 0 0">
+          前缀固定为 <code>doorwatch/&lt;deviceId&gt;/</code>。
+          <b>deviceId 必须与 config/doors.json 完全一致</b>,否则服务会忽略该消息并在日志中报警。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 三态判定 ================= -->
+  <section id="state">
+    <div class="sec-head">
+      <span class="sec-head__icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+      </span>
+      <h2>三态判定:整个系统最关键的一段逻辑</h2>
+    </div>
+    <p class="sec-sub">
+      看板有三种状态,不是两种。<b>第三种才是这个系统的价值所在</b> ——
+      它保证传感器掉线时看板不会撒谎。
+    </p>
+
+    <div class="fig" style="margin-bottom:18px">
+      <svg viewBox="0 0 1160 330" role="img" aria-label="有效状态判定流程图">
+        <defs>
+          <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#a8a49a"/>
+          </marker>
+        </defs>
+
+        <rect class="box" x="30" y="120" width="150" height="66" rx="9"/>
+        <text class="bt" x="48" y="146">收到消息</text>
+        <text class="bs" x="48" y="166">state / status / hb</text>
+
+        <path class="wire" d="M184,153 L232,153" marker-end="url(#ar2)"/>
+
+        <!-- 判定 1 -->
+        <rect class="box box--a" x="236" y="112" width="188" height="82" rx="9"/>
+        <text class="bt bt--a" x="254" y="138">人工置顶生效?</text>
+        <text class="bs" x="254" y="158">override 未过期</text>
+        <text class="bs" x="254" y="176">是 → 直接返回该值</text>
+
+        <path class="wire" d="M428,153 L476,153" marker-end="url(#ar2)"/>
+        <text class="flow" x="428" y="143">否</text>
+
+        <!-- 判定 2 -->
+        <rect class="box box--p" x="480" y="112" width="200" height="82" rx="9"/>
+        <text class="bt bt--w" x="498" y="138">心跳新鲜 且 在线?</text>
+        <text class="bs" x="498" y="158">now - lastSeen ≤ 180s</text>
+        <text class="bs" x="498" y="176">且 MQTT 未报 offline</text>
+
+        <path class="wire" d="M684,153 L732,153" marker-end="url(#ar2)"/>
+        <text class="flow" x="684" y="143">是</text>
+
+        <!-- 判定 3 -->
+        <rect class="box" x="736" y="112" width="180" height="82" rx="9"/>
+        <text class="bt" x="754" y="138">状态合法?</text>
+        <text class="bs" x="754" y="158">open 或 closed</text>
+        <text class="bs" x="754" y="176">否则视为未知</text>
+
+        <path class="wire" d="M920,153 L968,153" marker-end="url(#ar2)"/>
+
+        <rect class="box box--p" x="972" y="82" width="158" height="60" rx="9"/>
+        <text class="bt bt--w" x="990" y="108">显示 open/closed</text>
+        <text class="bs" x="990" y="127">绿 / 灰</text>
+
+        <!-- unknown 分支 -->
+        <path class="wire--r" d="M580,198 L580,250" marker-end="url(#ar-r)"/>
+        <text class="flow" x="590" y="243" fill="#b06367">否 —— 任何一关不过</text>
+
+        <rect class="box box--w" x="480" y="252" width="200" height="58" rx="9"/>
+        <text class="bt bt--r" x="498" y="278">显示 unknown</text>
+        <text class="bs" x="498" y="296">琥珀色 · 请联系 IT</text>
+
+        <path class="wire--r" d="M826,153 L826,250" marker-end="url(#ar-r)"/>
+        <text class="flow" x="836" y="243" fill="#b06367">否</text>
+        <path class="wire--r" d="M826,281 L684,281" marker-end="url(#ar-r)"/>
+
+        <!-- 判定1否分支 -->
+        <path class="wire--r" d="M330,198 L330,281 L476,281" marker-end="url(#ar-r)"/>
+      </svg>
+      <div class="fig__cap">图 3 · 有效状态判定链。任何一关不通过,一律降级为 unknown。</div>
+    </div>
+
+    <div class="versus">
+      <div class="vs vs--bad">
+        <h4>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+          朴素做法的问题
+        </h4>
+        <p>传感器挂了之后,门磁会保持<strong>最后一次上报的状态</strong>。如果直接把这个状态显示出来:</p>
+        <p>最后一条是 "CLOSED" → 传感器死了整整一周 → 看板每天都显示"已关门"。</p>
+        <p>用户看到"关门"就更不会来了 —— <strong>系统恰恰在最需要它的时候彻底失效</strong>。</p>
+      </div>
+      <div class="vs vs--good">
+        <h4>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+          本方案的处理
+        </h4>
+        <p>只有<strong>确认设备活着</strong>(心跳新鲜 + 未报离线)<strong>且状态合法</strong>,才敢显示开或关。</p>
+        <p>其余一律显示 <strong>unknown</strong>,用醒目的琥珀色提示"数据不可信,请联系 IT"。</p>
+        <p>此时看板拒绝给答案 —— 这比给一个错答案诚实得多,也更有用。</p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h3 style="font-size:15px;margin:0 0 14px;font-weight:600">判定真值表</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>心跳新鲜度</th>
+            <th>MQTT 在线</th>
+            <th>最后状态</th>
+            <th>看板显示</th>
+            <th>老师怎么理解</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>12 秒前</td><td>在线</td><td>CLOSED</td><td><strong>门关着</strong></td><td>别跑了</td></tr>
+          <tr><td>12 秒前</td><td>在线</td><td>OPEN</td><td><strong>门开着</strong></td><td>直接过去</td></tr>
+          <tr><td>4 分钟前</td><td>在线</td><td>CLOSED</td><td><strong>状态未知</strong></td><td>先联系 IT</td></tr>
+          <tr><td>12 秒前</td><td>离线</td><td>CLOSED</td><td><strong>状态未知</strong></td><td>先联系 IT</td></tr>
+          <tr><td>从未上报</td><td>—</td><td>—</td><td><strong>状态未知</strong></td><td>先联系 IT</td></tr>
+          <tr><td>12 秒前</td><td>在线</td><td>人工置顶</td><td><strong>置顶值</strong></td><td>以置顶为准</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ================= 软件侧 ================= -->
+  <section id="sw">
+    <div class="sec-head">
+      <span class="sec-head__icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+      </span>
+      <h2>软件侧:两个纯 JS 依赖</h2>
+    </div>
+    <p class="sec-sub">
+      没有原生模块,换机器不用编译;单容器,不用另外维护 Mosquitto。
+    </p>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3 style="font-size:14px;margin:0 0 14px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--faint)">运行时组成</h3>
+        <dl class="kv">
+          <dt>HTTP(S) 服务</dt>
+          <dd>原生 <code>node:http</code> / <code>node:https</code>,无框架</dd>
+          <dt>MQTT Broker</dt>
+          <dd><code>aedes</code> 内嵌,单进程同时当 broker 和客户端</dd>
+          <dt>MQTT 客户端</dt>
+          <dd><code>mqtt</code> 订阅 <code>doorwatch/+/…</code></dd>
+          <dt>数据库</dt>
+          <dd><code>node:sqlite</code>(Node 24 内置),免编译</dd>
+          <dt>实时推送</dt>
+          <dd>SSE,文本流,自带断线重连</dd>
+          <dt>前端</dt>
+          <dd>原生 ESM + Service Worker,无构建步骤</dd>
+          <dt>证书</dt>
+          <dd>调用系统 <code>openssl</code> 生成自签证书</dd>
+        </dl>
+      </div>
+
+      <div class="card">
+        <h3 style="font-size:14px;margin:0 0 14px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--faint)">可靠性设计</h3>
+        <dl class="kv">
+          <dt>三重离线判定</dt>
+          <dd>心跳超时 + 遗嘱消息 + 最后状态新鲜度,互相兜底</dd>
+          <dt>状态保留</dt>
+          <dd>MQTT retain,服务重启后立即恢复最后状态</dd>
+          <dt>未知设备告警</dt>
+          <dd>deviceId 配错时日志直接报警,不静默丢消息</dd>
+          <dt>资源版本戳</dt>
+          <dd>服务端注入 <code>?v=</code>,改完前端刷新即生效</dd>
+          <dt>缓存策略</dt>
+          <dd>静态资源 no-cache,SW 网络优先 + 缓存兜底</dd>
+          <dt>原子更新</dt>
+          <dd>只改状态变化时才记事件,重复上报只刷新心跳</dd>
+          <dt>写操作鉴权</dt>
+          <dd>读接口免登录,写接口需管理密钥</dd>
+          <dt>数据持久化</dt>
+          <dd>SQLite + WAL,存 Docker 卷,容器重建不丢</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="note note--info" style="margin-top:16px">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+      <div>
+        <b>为什么不用 Home Assistant?</b>
+        如果学校已经在跑 HA,那用它更省事 —— ESPHome 固件本来就发标准 MQTT,HA 能直接发现。
+        但 HA 本身有学习成本和插件依赖,而这个场景只需要三件事:一个网页、三个状态、一条历史。
+        所以这里保持零依赖,一条 <code>docker compose up -d</code> 就能跑。
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 部署与成本 ================= -->
+  <section id="deploy">
+    <div class="sec-head">
+      <span class="sec-head__icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>
+      </span>
+      <h2>部署形态与成本</h2>
+    </div>
+
+    <div class="grid-2" style="margin-bottom:18px">
+      <div class="card">
+        <h3 style="font-size:15px;margin:0 0 12px;font-weight:600">形态 A · 单容器(推荐)</h3>
+        <p style="font-size:13.5px;color:var(--muted);margin:0 0 12px">
+          看板服务、MQTT broker、SQLite 全部打进一个镜像。扔到任意一台有 Docker 的 Linux 机器上就能跑。
+        </p>
+        <div class="chips">
+          <span class="chip">docker compose up -d</span>
+          <span class="chip">8443 · HTTPS</span>
+          <span class="chip">1883 · MQTT</span>
+          <span class="chip">卷持久化</span>
+        </div>
+      </div>
+      <div class="card">
+        <h3 style="font-size:15px;margin:0 0 12px;font-weight:600">形态 B · 接入已有 broker</h3>
+        <p style="font-size:13.5px;color:var(--muted);margin:0 0 12px">
+          学校已有 Mosquitto 等服务时,设 <code>MQTT_HOST</code> 即可接入,看板侧不再自带 broker。
+        </p>
+        <div class="chips">
+          <span class="chip">MQTT_HOST</span>
+          <span class="chip">MQTT_USERNAME</span>
+          <span class="chip">外部认证</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3 style="font-size:15px;margin:0 0 16px;font-weight:600">方案一 · 复用现有门禁门磁</h3>
+        <div class="bench"><span class="bench-label">ESP32 开发板</span><div class="bench-track"><div class="bench-fill" style="width:78%"></div></div><span class="bench-val">￥25</span></div>
+        <div class="bench"><span class="bench-label">PC817 光耦</span><div class="bench-track"><div class="bench-fill" style="width:8%"></div></div><span class="bench-val">￥2</span></div>
+        <div class="bench"><span class="bench-label">降压模块</span><div class="bench-track"><div class="bench-fill" style="width:10%"></div></div><span class="bench-val">￥3</span></div>
+        <div class="bench"><span class="bench-label">电阻 + 电容</span><div class="bench-track"><div class="bench-fill" style="width:6%"></div></div><span class="bench-val">￥2</span></div>
+        <div class="total"><span>合计 / 扇门</span><span>￥32</span></div>
+        <p style="font-size:12.5px;color:var(--muted);margin:12px 0 0">不用买门磁、不用重新定位安装,省掉一次打孔。</p>
+      </div>
+
+      <div class="card">
+        <h3 style="font-size:15px;margin:0 0 16px;font-weight:600">方案二 · 自购门磁(门框无门禁时)</h3>
+        <div class="bench"><span class="bench-label">ESP32 开发板</span><div class="bench-track"><div class="bench-fill bench-fill--a" style="width:78%"></div></div><span class="bench-val">￥25</span></div>
+        <div class="bench"><span class="bench-label">干接点门磁</span><div class="bench-track"><div class="bench-fill bench-fill--a" style="width:47%"></div></div><span class="bench-val">￥15</span></div>
+        <div class="bench"><span class="bench-label">USB 电源</span><div class="bench-track"><div class="bench-fill bench-fill--a" style="width:31%"></div></div><span class="bench-val">￥10</span></div>
+        <div class="bench"><span class="bench-label">线材 + 固定</span><div class="bench-track"><div class="bench-fill bench-fill--a" style="width:31%"></div></div><span class="bench-val">￥10</span></div>
+        <div class="total"><span>合计 / 扇门</span><span>￥60</span></div>
+        <p style="font-size:12.5px;color:var(--muted);margin:12px 0 0">门框没插座时改用电池深度睡眠版,续航一年以上。</p>
+      </div>
+    </div>
+
+    <!-- ================= 选型前置检查 ================= -->
+    <section id="check" style="margin-top:56px">
+      <div class="sec-head">
+        <span class="sec-head__icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 13 2 2 4-4"/></svg>
+        </span>
+        <h2>选型前置检查</h2>
+      </div>
+      <p class="sec-sub">
+        动手之前先把这几件事查清楚。<b>B 组必须拿万用表实测,不能靠猜</b> ——
+        门禁品牌型号不同,内部接法差别很大。查出来不满足的项,直接对照下面的降级路径走,
+        别买到料了才发现做不成。
+      </p>
+
+      <div class="grid-2" style="gap:16px">
+        <div class="card">
+          <h3 class="chk-h chk-h--a">A · 门体与门禁侧(现场看)</h3>
+          <ul class="chk-list">
+            <li><span class="chk-box"></span><span><b>门磁是不是独立端子?</b>有些门禁把门磁和出门按钮并在一个端子上,得先拆开</span></li>
+            <li><span class="chk-box"></span><span><b>门磁是干接点还是带供电的?</b>只有干接点能并接</span></li>
+            <li><span class="chk-box"></span><span><b>触点"闭合"对应门开还是门关?</b>决定固件里的逻辑极性,反了改 <code>inverted</code></span></li>
+            <li><span class="chk-box"></span><span><b>门框附近有没有空位放 ESP32 + 降压模块?</b>门框上方的不锈钢箱子里通常有,但要量尺寸</span></li>
+            <li><span class="chk-box"></span><span><b>门禁断电时门是常开还是常闭?</b>涉及消防和安防,改线前先跟物业和安全部门确认</span></li>
+            <li><span class="chk-box"></span><span><b>厂家质保和改造规定?</b>有些门禁合同不允许第三方动线</span></li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3 class="chk-h chk-h--b">B · 供电侧(必须实测)</h3>
+          <ul class="chk-list">
+            <li><span class="chk-box"></span><span><b>门禁 DC 输入是 12V 还是 24V?</b>万用表直流档量,别看铭牌猜</span></li>
+            <li><span class="chk-box"></span><span><b>门磁两端子对控制器 GND 的电压?</b>门关≈0V、门开≈12/24V → 控制器有上拉,<b>必须光耦</b>;两种状态都≈0V → 纯干接点</span></li>
+            <li><span class="chk-box"></span><span><b>这路是常电还是脉冲?</b>优先取控制器 DC 输入或读卡器供电,<b>别取电锁</b>(部分门锁脉冲供电)</span></li>
+            <li><span class="chk-box"></span><span><b>带不带 UPS 后备?</b>带最理想,停电时看板跟着门禁一起活</span></li>
+            <li><span class="chk-box"></span><span><b>降压模块先调到 5V 再接 ESP32</b>MP1584EN 出厂默认输出 12V,直接接会烧</span></li>
+            <li><span class="chk-box"></span><span><b>降压模块能塞进盒子吗?</b>带电位器的要留手拧的空间</span></li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3 class="chk-h chk-h--c">C · 网络侧</h3>
+          <ul class="chk-list">
+            <li><span class="chk-box"></span><span><b>门边的 WiFi 信号够强吗?</b>要站在<b>门框位置</b>看信号格,不要在办公室里测</span></li>
+            <li><span class="chk-box"></span><span><b>ESP32 能不能访问到服务器?</b>校园网开了 AP 隔离的话,手机能看看板 ≠ 传感器能连 broker</span></li>
+            <li><span class="chk-box"></span><span><b>服务器是固定内网 IP 吗?</b>DHCP 一变,固件就找不到 broker 了 —— 建议在路由器上做静态绑定</span></li>
+            <li><span class="chk-box"></span><span><b>门禁后台有没有开放 API 或事件推送?</b>有的话这条最省事,见降级路径</span></li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3 class="chk-h chk-h--d">D · 下单前确认规格</h3>
+          <ul class="chk-list">
+            <li><span class="chk-box"></span><span><b>门磁:干接点、常开型</b>确认接插件是 2 pin 还是螺丝端子</span></li>
+            <li><span class="chk-box"></span><span><b>ESP32 开发板的尺寸</b>要塞得进门边的盒子,Type-C 口更方便</span></li>
+            <li><span class="chk-box"></span><span><b>降压模块输入范围要覆盖 24V</b>MP1584EN 上限 28V,够用</span></li>
+            <li><span class="chk-box"></span><span><b>PC817 买 A 档</b>CTR 更高,同样的电流亮度更足</span></li>
+            <li><span class="chk-box"></span><span><b>自购门磁时:门框材质 + 门缝宽度</b>金属门影响吸合,缝隙以毫米计,买前问客服</span></li>
+            <li><span class="chk-box"></span><span><b>多扇门的话 deviceId 规划好</b>接线和配置要一一对应</span></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <h3 style="font-size:15px;margin:0 0 4px;font-weight:600">查出来不满足怎么办 —— 降级路径</h3>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 14px">每一行都是真实会卡住的地方。照着走,方案总能落下来,只是成本和复杂度不同。</p>
+        <table>
+          <thead>
+            <tr><th>查出来的情况</th><th>影响</th><th>怎么办</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>门磁无法并接,或不是干接点</td>
+              <td>方案一不可行</td>
+              <td>改用方案二,自购干接点门磁(￥60 / 扇门)</td>
+            </tr>
+            <tr>
+              <td>门框上根本取不到电</td>
+              <td>两个方案都无法取电</td>
+              <td>改<b>电池深度睡眠版</b>(2 节 AA),同时把服务器端 <code>ONLINE_TIMEOUT_MS</code> 放宽到 45 分钟</td>
+            </tr>
+            <tr>
+              <td>门边 WiFi 信号差</td>
+              <td>传感器连不上 broker</td>
+              <td>换带外置天线的 ESP32 / 门边加装 AP / 把 ESP32 挪到信号更好的位置</td>
+            </tr>
+            <tr>
+              <td>校园网开了 AP 隔离</td>
+              <td>手机和传感器都够不着服务器</td>
+              <td>服务器挪到可互访网段,或用 <code>network_mode: host</code>,或干脆给这台服务器单独接一个不隔离的 SSID</td>
+            </tr>
+            <tr>
+              <td>门禁后台有开放 API / 事件推送</td>
+              <td>——</td>
+              <td><b>最省事</b>:零硬件,让门禁直接推事件到 <code>POST /api/doors/:id/state</code>。代价是没有"传感器离线"这个状态</td>
+            </tr>
+            <tr>
+              <td>门禁后台没 API,门磁也不能并接</td>
+              <td>——</td>
+              <td>只能自购门磁 + ESP32(方案二);如果连门框都动不了,这扇门就不适合做</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="card" style="margin-top:16px">
+      <h3 style="font-size:15px;margin:0 0 14px;font-weight:600">代码结构</h3>
+      <table>
+        <thead>
+          <tr><th>路径</th><th>职责</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>server/src/index.js</code></td><td>HTTPS 服务、路由、静态托管与版本戳注入</td></tr>
+          <tr><td><code>server/src/broker.js</code></td><td>内置 broker、主题订阅、未登记设备告警</td></tr>
+          <tr><td><code>server/src/state.js</code></td><td><b>状态机</b> —— 三态判定与降级逻辑</td></tr>
+          <tr><td><code>server/src/db.js</code></td><td>SQLite 表结构与事件记录</td></tr>
+          <tr><td><code>server/src/certs.js</code></td><td>openssl 自签证书与 SAN 注入</td></tr>
+          <tr><td><code>public/</code></td><td>手机端看板(PWA、Service Worker)</td></tr>
+          <tr><td><code>esphome/</code></td><td>三份固件:自购门磁 / 复用门禁 / 电池版</td></tr>
+          <tr><td><code>test/</code></td><td>端到端测试 + Chrome CDP 界面测试</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ================= 备选方案:米家 + Home Assistant ================= -->
+  <section id="ha">
+    <div class="sec-head">
+      <span class="sec-head__icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></svg>
+      </span>
+      <h2>备选方案 · 米家门磁 + 网关 + Home Assistant</h2>
+    </div>
+    <p class="sec-sub">
+      最省事的一条兜底路:<b>不动线、不借电、不烧固件</b>,门磁贴上去、网关插上电就完事。
+      代价是多一层系统要维护 —— 但对"门框根本动不了"的场景,这是唯一能落地的方案。
+    </p>
+
+    <div class="fig">
+      <svg viewBox="0 0 1160 300" role="img" aria-label="米家门磁方案的链路">
+        <defs>
+          <marker id="ar4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#a8a49a"/>
+          </marker>
+        </defs>
+
+        <rect class="box" x="34" y="56" width="206" height="84" rx="9"/>
+        <text class="bt" x="52" y="82">米家门磁</text>
+        <text class="bs" x="52" y="102">蓝牙 BLE · 纽扣电池 1–2 年</text>
+        <text class="bs" x="52" y="120">贴在门框 + 门扇,免布线</text>
+
+        <path class="wire" d="M244,98 L292,98" marker-end="url(#ar4)"/>
+        <text class="flow" x="246" y="88">蓝牙</text>
+
+        <rect class="box" x="296" y="56" width="206" height="84" rx="9"/>
+        <text class="bt" x="314" y="82">米家蓝牙网关</text>
+        <text class="bs" x="314" y="102">插电 · 放离门近的地方</text>
+        <text class="bs" x="314" y="120">中转子设备状态</text>
+
+        <path class="wire" d="M506,98 L554,98" marker-end="url(#ar4)"/>
+        <text class="flow" x="508" y="88">米家云</text>
+
+        <rect class="box box--p" x="558" y="56" width="206" height="84" rx="9"/>
+        <text class="bt bt--w" x="576" y="82">Home Assistant</text>
+        <text class="bs" x="576" y="102">xiaomi_miot · 轮询云端</text>
+        <text class="bs" x="576" y="120">把门状态转成 MQTT 消息</text>
+
+        <path class="wire--p" d="M768,98 L816,98" marker-end="url(#ar-p)"/>
+        <text class="flow" x="770" y="88">MQTT</text>
+
+        <rect class="box box--p" x="820" y="56" width="206" height="84" rx="9"/>
+        <text class="bt bt--w" x="838" y="82">doorwatch 看板</text>
+        <text class="bs" x="838" y="102">服务端零改动,判定照旧</text>
+        <text class="bs" x="838" y="120">全校统一口径 + 历史</text>
+
+        <text class="flow" x="1060" y="98" fill="#7c7a72">↑ 可选</text>
+
+        <!-- 另一条用法 -->
+        <path class="wire" d="M661,144 L661,186" marker-end="url(#ar4)"/>
+        <rect class="box box--a" x="510" y="190" width="302" height="76" rx="9"/>
+        <text class="bt bt--a" x="528" y="216">也可以只用 HA 自己的卡片</text>
+        <text class="bs" x="528" y="236">Lovelace 仪表盘 + 手机 App</text>
+        <text class="bs" x="528" y="254">只给 IT 内部用时,这一步就够了</text>
+
+        <text class="flow" x="34" y="288">整个方案的关键:doorwatch 的服务端只订阅 <tspan font-family="JetBrains Mono, monospace">doorwatch/&lt;deviceId&gt;/…</tspan> 主题,换传感器不改一行代码。</text>
+      </svg>
+      <div class="fig__cap">
+        图 5 · 米家方案链路。HA 处在"采集层",doorwatch 继续当"判定层 + 展示层"。
+        如果只给 IT 内部用,可以直接在 HA 这层收尾,不必接 doorwatch。
+        <br>
+        BLE 门磁只能走云端(米家云),延迟 30–60 秒 —— 这是 BLE 的固有限制,不是配置问题。
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h3 style="font-size:15px;margin:0 0 14px;font-weight:600">装之前必须先确认的两件事</h3>
+      <div class="two-col">
+        <div>
+          <p style="font-size:13px;color:var(--muted);margin:0 0 8px">
+            <strong>① 门磁是蓝牙还是 Zigbee?</strong>
+          </p>
+          <ul class="chk-list">
+            <li><span class="chk-box"></span><span><b>小米门窗感应器 2</b>(MCCGQ02HL)= <b>蓝牙 BLE</b>,配蓝牙网关</span></li>
+            <li><span class="chk-box"></span><span><b>小米门窗感应器</b>(一代)= <b>Zigbee</b>,配多模网关</span></li>
+            <li><span class="chk-box"></span><span><b>Aqara 磁力门吸 E1/H1</b> = <b>Zigbee</b>,配多模网关</span></li>
+          </ul>
+        </div>
+        <div>
+          <p style="font-size:13px;color:var(--muted);margin:0 0 8px">
+            <strong>② 用哪个集成?</strong>
+          </p>
+          <ul class="chk-list">
+            <li><span class="chk-box"></span><span><b>BLE 门磁 → 只能用 xiaomi_miot</b>,官方集成看不到蓝牙设备</span></li>
+            <li><span class="chk-box"></span><span><b>Zigbee 门磁 → 两个都行</b>,优先小米官方 Xiaomi Home</span></li>
+            <li><span class="chk-box"></span><span><b>别两个都装</b>,先试 xiaomi_miot,门磁没出现再换</span></li>
+          </ul>
+        </div>
+      </div>
+      <p style="font-size:12px;color:var(--muted);margin:14px 0 0">
+        依据:小米官网《Mi Door and Window Sensor 2 FAQ》与小米官方集成 ha_xiaomi_home 的说明文档。
+        完整接入步骤见项目里的 <code>ha/README.md</code>。
+      </p>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h3 style="font-size:15px;margin:0 0 6px;font-weight:600">★ 传感器掉线时,看板怎么保证不撒谎</h3>
+      <p style="font-size:13.5px;color:var(--muted);margin:0 0 14px">
+        米家门磁这条路有个社区集成的坑:<code>xiaomi_miot</code> 在设备无响应时
+        <b>不会</b>把实体置为 unavailable,而是无限期保留最后一次读到的状态(issue #2699)。
+        所以「实体看起来还在」不等于「设备真的还活着」。
+        doorwatch 用三道防线挡住这件事 —— 任何一道生效,看板都只会显示「状态未知」。
+      </p>
+      <div class="grid-2" style="gap:20px">
+        <ul class="chk-list">
+          <li><span class="chk-box"></span><span><b>第一道 · 状态值</b>模板在读不到传感器时输出 <code>UNKNOWN</code>;服务端认识这个值,收到就把状态打回「未知」并标记离线,而不是当成看不懂的值丢掉</span></li>
+          <li><span class="chk-box"></span><span><b>第二道 · 上报时间</b>判传感器死活看的是「实体最后一次<b>上报</b>的时间」(<code>last_reported</code>),不是状态值本身 —— 值不变不代表设备还活着</span></li>
+        </ul>
+        <ul class="chk-list">
+          <li><span class="chk-box"></span><span><b>第三道 · 心跳</b>心跳只证明「设备此刻还活着」,不证明「门是开是关」,所以它不会把已降级的状态复活;服务端自己的心跳超时负责兜底</span></li>
+          <li><span class="chk-box"></span><span><b>顺带挡掉</b>broker 重放的 retained 旧消息只更新状态、不算存活 —— 否则服务端一重启,几天前的旧状态就会诈尸</span></li>
+        </ul>
+      </div>
+      <p style="font-size:12px;color:var(--muted);margin:14px 0 0">
+        还有一处容易漏:HA 的模板实体默认不会按时重算,所以自动化里每分钟用
+        <code>homeassistant.update_entity</code> 强制重算一次,新鲜度判据才拿得到「此刻」的时间。
+        实测降级耗时:收到 UNKNOWN 后 64 毫秒,收到 offline 后 3 毫秒 —— 不等 180 秒的心跳超时。
+      </p>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h3 style="font-size:15px;margin:0 0 14px;font-weight:600">三个方案横向对比</h3>
+      <table>
+        <thead>
+          <tr><th>维度</th><th>方案一 · 复用门禁 + ESP32</th><th>方案二 · 自购门磁 + ESP32</th><th>方案三 · 米家 + HA</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>硬件成本 / 扇门</td>
+            <td><strong>￥32</strong></td>
+            <td>￥60</td>
+            <td>￥60–90(仅门磁,网关另计 ￥150–300)</td>
+          </tr>
+          <tr>
+            <td>要不要动门禁线</td>
+            <td>要,必须加光耦隔离</td>
+            <td>不用,自己装新传感器</td>
+            <td><strong>完全不用</strong></td>
+          </tr>
+          <tr>
+            <td>要不要借门禁的电</td>
+            <td>要(12/24V → 降压 → 5V)</td>
+            <td>要(USB 5V)或用电池版</td>
+            <td><strong>不用</strong>,门磁纽扣电池、网关插墙</td>
+          </tr>
+          <tr>
+            <td>上手门槛</td>
+            <td>要懂万用表 + 接线 + 烧录</td>
+            <td>要接线 + 烧录</td>
+            <td><strong>贴上、插电、装 HA</strong></td>
+          </tr>
+          <tr>
+            <td>数据是否出户</td>
+            <td>不出,全在内网</td>
+            <td>不出</td>
+            <td>默认走米家云;<b>刷本地固件后不出</b></td>
+          </tr>
+          <tr>
+            <td>状态延迟</td>
+            <td>即时(&lt;1s)</td>
+            <td>即时(&lt;1s)</td>
+            <td>本地模式 5–10s;云端模式默认 60s</td>
+          </tr>
+          <tr>
+            <td>多扇门扩展</td>
+            <td>每扇加一个 ESP32</td>
+            <td>每扇加一个 ESP32</td>
+            <td>加门磁即可,同一网关带几十个</td>
+          </tr>
+          <tr>
+            <td>能接到 doorwatch 吗</td>
+            <td>原生</td>
+            <td>原生</td>
+            <td><strong>能</strong>,HA 发 MQTT 即可,服务端零改动</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="grid-2" style="margin-top:16px;align-items:start">
+      <div class="card">
+        <h3 style="font-size:15px;margin:0 0 12px;font-weight:600">接进 doorwatch:两种配法,零代码改动</h3>
+        <p style="font-size:13.5px;color:var(--muted);margin:0 0 12px">
+          doorwatch 只认 MQTT 主题,所以谁当 broker 都行,二选一:
+        </p>
+
+        <div style="border:1px solid var(--line);border-radius:12px;padding:13px 15px;margin-bottom:11px;background:var(--primary-soft)">
+          <div style="font-size:13px;font-weight:600;color:var(--primary);margin-bottom:5px">配法一 · HA 还没有 MQTT broker</div>
+          <p style="font-size:13px;margin:0;color:#3a4256;line-height:1.65">
+            让 HA 连 doorwatch 自带的 broker(1883,默认匿名),HA 往
+            <code>doorwatch/it-office-door/state</code> 发布。doorwatch 端<b>什么都不用改</b>。
+          </p>
+        </div>
+
+        <div style="border:1px solid var(--line);border-radius:12px;padding:13px 15px;background:var(--accent-soft)">
+          <div style="font-size:13px;font-weight:600;color:#9a5c26;margin-bottom:5px">配法二 · HA 已有 Mosquitto 集成</div>
+          <p style="font-size:13px;margin:0;color:#3a4256;line-height:1.65">
+            HA 只能有一个 MQTT broker 配置,那就反过来让 doorwatch 去连 HA 的 broker:
+            设 <code>MQTT_HOST</code>、<code>MQTT_PORT_EXTERNAL</code>、<code>MQTT_USERNAME</code>、
+            <code>MQTT_PASSWORD</code>。<b>同样零代码改动</b>,只改环境变量。
+          </p>
+        </div>
+
+        <p style="font-size:12.5px;color:var(--muted);margin:12px 0 0">
+          主题末尾的 <code>it-office-door</code> 必须和 <code>config/doors.json</code> 里的
+          <code>deviceId</code> 一致 —— 和 ESP32 方案是同一套规矩。
+        </p>
+      </div>
+
+      <div class="card">
+        <h3 style="font-size:15px;margin:0 0 12px;font-weight:600">HA 侧需要的三个自动化</h3>
+        <p style="font-size:13.5px;color:var(--muted);margin:0 0 12px">
+          放进 HA 的 <code>automations.yaml</code>。关键点:心跳<b>只在传感器可读时才发</b>,
+          读不到就立刻推 <code>status: offline</code> 让看板降级成"未知",不等它自己超时。
+        </p>
+<pre style="margin:0;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:13px 14px;font-family:'JetBrains Mono',monospace;font-size:11.5px;line-height:1.7;overflow-x:auto;color:#3a4256">- alias: "门磁状态 → doorwatch"
+  triggers:
+    - trigger: state
+      entity_id: sensor.doorwatch_it_office_door_state
+  actions:
+    - action: mqtt.publish
+      data:
+        topic: "doorwatch/it-office-door/state"
+        payload: "{{ states('sensor.doorwatch_it_office_door_state') }}"
+        qos: 1
+        retain: true
+
+- alias: "每分钟体检(★ 正确性的关键)"
+  triggers:
+    - trigger: time_pattern
+      minutes: "/1"
+  actions:
+    # 模板默认不会按时重算,得强行刷一次
+    - action: homeassistant.update_entity
+      target:
+        entity_id:
+          - sensor.doorwatch_it_office_door_state
+          - sensor.doorwatch_it_office_door_readable
+    - if:
+        - condition: template
+          value_template: >
+            {% set r = states.sensor.doorwatch_it_office_door_readable %}
+            {% set ts = r.last_reported | default(r.last_updated, true) %}
+            {{ r is not none and r.state == 'on'
+               and ts is defined and ts is not none
+               and (as_timestamp(now()) - as_timestamp(ts)) < 120 }}
+      then:
+        - action: mqtt.publish
+          data:
+            topic: "doorwatch/it-office-door/state"
+            payload: "{{ states('sensor.doorwatch_it_office_door_state') }}"
+            qos: 1
+            retain: true
+        - action: mqtt.publish
+          data:
+            topic: "doorwatch/it-office-door/heartbeat"
+            payload: "alive"
+            qos: 1
+      else:
+        - action: mqtt.publish
+          data:
+            topic: "doorwatch/it-office-door/status"
+            payload: "offline"
+            qos: 1
+
+- alias: "HA 启动时补发一次"
+  triggers:
+    - trigger: homeassistant
+      event: start
+  actions:
+    - delay: "00:01:00"
+    - action: homeassistant.update_entity
+      target:
+        entity_id:
+          - sensor.doorwatch_it_office_door_state
+          - sensor.doorwatch_it_office_door_readable</pre>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h3 style="font-size:15px;margin:0 0 14px;font-weight:600">落地要点(容易踩的坑)</h3>
+      <div class="grid-2" style="gap:20px">
+        <ul class="chk-list">
+          <li><span class="chk-box"></span><span><b>选对实体</b>门磁会同时暴露 <code>door</code>(开合)和 <code>motion</code>(靠近)两个,要用 <b>door</b> 那个</span></li>
+          <li><span class="chk-box"></span><span><b>BLE 门磁只能用 xiaomi_miot</b>小米官方集成明确不支持蓝牙设备,用了看不到门磁</span></li>
+          <li><span class="chk-box"></span><span><b>方向可能反</b>MIoT 的 <code>contact-state</code> 是「磁铁靠近=门关」,装完开一次门验证方向</span></li>
+        </ul>
+        <ul class="chk-list">
+          <li><span class="chk-box"></span><span><b>掉线不会变 unavailable</b>集成会保留旧状态,必须靠<b>上报时间</b>判断死活,否则看板会撒谎</span></li>
+          <li><span class="chk-box"></span><span><b>用 last_reported 不用 last_updated</b>状态和属性都没变时,HA 只推进 <code>last_reported</code>,<code>last_updated</code> 会冻住 —— 用错了会出现"传感器好好的,看板一直显示未知"</span></li>
+          <li><span class="chk-box"></span><span><b><code>states('x')</code> 只返回文本</b>拿时间戳要写 <code>states.x.last_reported</code>,写错会每分钟抛模板错误</span></li>
+          <li><span class="chk-box"></span><span><b>模板不会按时重算</b>值不变 = 不重算,新鲜度判据会卡住;每分钟 <code>update_entity</code> 强制重算一次</span></li>
+          <li><span class="chk-box"></span><span><b>失联要立刻推 offline</b>别干等心跳超时 —— 实测 3ms 就能让看板降级</span></li>
+          <li><span class="chk-box"></span><span><b>门磁靠轮询,延迟 15–30 秒</b>作者明确说门磁这类设备不适合做实时触发 —— 但「出门前扫一眼」够用</span></li>
+          <li><span class="chk-box"></span><span><b>token 约 7 天会过期</b>集成会集体失联,看板显示"状态未知"(安全,但要每周重载一次集成)</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h3 style="font-size:15px;margin:0 0 14px;font-weight:600">怎么选</h3>
+      <table>
+        <thead>
+          <tr><th>你的情况</th><th>选哪个</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>门框不能动线,也没有门禁可蹭</td><td><strong>方案三</strong>,这是唯一能落地的</td></tr>
+          <tr><td>学校已经有 Aqara 网关(智能灯、传感器那些)</td><td><strong>方案三</strong>,边际成本只有一个门磁</td></tr>
+          <tr><td>学校已经在跑 Home Assistant</td><td><strong>方案三</strong>,顺手把门磁接进 HA</td></tr>
+          <tr><td>只想给 IT 内部几个人看,不上全校</td><td><strong>方案三 + HA 卡片</strong>,连 doorwatch 都不用装</td></tr>
+          <tr><td>门框能拉线、有门禁可蹭电</td><td><strong>方案一</strong>,￥32 最便宜,而且完全自控</td></tr>
+          <tr><td>要完全掌控、离线可用、不依赖米家云</td><td><strong>方案一 / 二</strong>,ESP32 全程不出内网</td></tr>
+          <tr><td>要统一状态口径、要有历史记录、要给全校用</td><td>方案一/二 接 doorwatch;方案三也接(HA 发 MQTT 即可)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note note--info" style="margin-top:16px">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+      <div>
+        <b>三条路殊途同归。</b>
+        无论传感器是 ESP32、门禁系统还是米家门磁,doorwatch 收到的都是同一组 MQTT 主题。
+        <b>判定逻辑、看板、历史、告警,一份代码通吃</b> —— 换传感器只改采集端,不动服务端。
+        这也是为什么这个项目的服务端不掺任何硬件假设。
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h3 style="font-size:15px;margin:0 0 6px;font-weight:600">设备还在路上,现在就能做完的事</h3>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 14px">
+        硬件到位后只剩两件事:改一个实体名、把方向开关拨对。其余现在就能做完。
+      </p>
+      <div class="grid-2" style="gap:20px">
+        <ul class="chk-list">
+          <li><span class="chk-box"></span><span><b>装 HA + xiaomi_miot</b>先登录小米账号,把集成装好,设备到家直接绑定</span></li>
+          <li><span class="chk-box"></span><span><b>别绕 HACS</b>只要这一个集成,一条 <code>wget … install.sh</code> 就行 —— 省掉绑 GitHub 账号和以后管更新的麻烦</span></li>
+          <li><span class="chk-box"></span><span><b>先跑一遍模拟</b><code>node tools/demo.mjs --mode ha</code> —— 不用硬件就能验证整条链路</span></li>
+          <li><span class="chk-box"></span><span><b>把自动化装好</b><code>ha/templates.yaml</code> + <code>ha/automations.yaml</code> 拷进 HA</span></li>
+        </ul>
+        <ul class="chk-list">
+          <li><span class="chk-box"></span><span><b>两边 broker 对上</b>HA 的 MQTT 集成指向 doorwatch 的 1883,或者反过来设 MQTT_HOST</span></li>
+          <li><span class="chk-box"></span><span><b>确认 deviceId 一致</b>doors.json 和自动化主题末段必须一样,否则服务端会打"未登记设备"告警</span></li>
+          <li><span class="chk-box"></span><span><b>规划摆放</b>网关离门 5 米内最佳;门磁与磁铁间隙 &lt; 18mm</span></li>
+        </ul>
+      </div>
+      <p style="font-size:12px;color:var(--muted);margin:14px 0 0">
+        <code>--mode ha</code> 模拟的是 HA 自动化的真实行为:<b>状态变化才发消息,传感器读不到就不发心跳</b>。
+        所以硬件没到,就能验证"传感器掉线 → 看板显示状态未知"这条最关键的路径。
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    <span>doorwatch · IT 办公室门磁看板 · 架构说明 v1.0.0</span>
+    <span>Node.js 24 · aedes · mqtt · node:sqlite · 无原生依赖</span>
+  </footer>
+</div>
+</body>
+</html>

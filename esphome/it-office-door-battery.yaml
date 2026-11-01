@@ -1,0 +1,156 @@
+# =====================================================================
+#  IT 办公室门磁 —— ESPHome 固件(电池 + 深度睡眠版)
+#
+#  什么时候用这版:
+#    门框上没有插座,没法拉 USB 供电。用 2 节 AA 电池,醒来读一次门磁、
+#    发一次状态和心跳,然后接着睡,续航可以做到一年以上。
+#
+#  ⚠️ 重要:这版的在线判定阈值要放宽。
+#     设备每 15 分钟才醒一次,所以服务器端的
+#     ONLINE_TIMEOUT_MS 必须大于这个间隔(建议 45 分钟 = 2700000 毫秒),
+#     否则会被误判成"传感器离线",看板一直显示未知。
+#
+#     docker-compose.yml 里的环境变量改成:
+#         ONLINE_TIMEOUT_MS: "2700000"
+#
+#  接线与 USB 版完全一样,只是不接 USB 电源。
+#
+#  为什么用 gpio 平台而不是 template:
+#     深度睡眠醒来后 ESPHome 会重新初始化,这时 gpio binary_sensor
+#     会重新读一次引脚电平 —— 拿到的就是"此刻"门的状态,不会漏掉睡眠期间的变化。
+#
+#  电量:ADC 分压测电池电压,倍率需要按实际电阻校准。
+# =====================================================================
+
+substitutions:
+  device_name: it-office-door-bat
+  friendly_name: "IT 办公室门磁(电池版)"
+  mqtt_broker_ip: "192.168.1.10"
+  mqtt_port: "1883"
+  mqtt_topic_prefix: doorwatch/it-office-door
+  door_pin: GPIO21
+  sleep_duration: 15min
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  min_version: 2024.6.0
+  on_boot:
+    # 优先级 800:晚于 WiFi 连接建立(600),早于一切常规初始化收尾(600+)
+    - priority: 800
+      then:
+        - script.execute: publish_now
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+logger:
+  level: INFO
+
+api:
+  reboot_timeout: 0s
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  power_save_mode: none
+  # 深度睡眠场景:优先连上最近一次成功的热点,省掉扫描时间,省电
+  fast_connect: true
+
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: Asia/Shanghai
+
+deep_sleep:
+  id: deep_sleep_1
+  run_duration: 20s
+  sleep_duration: ${sleep_duration}
+
+# ---------------------------------------------------------------------
+#  门磁
+#  干接点 + 内部上拉:GPIO 高 = 门开,GPIO 低 = 门关
+# ---------------------------------------------------------------------
+binary_sensor:
+  - platform: gpio
+    id: door_contact
+    pin:
+      number: ${door_pin}
+      pullup: true
+      inverted: false
+    device_class: door
+
+# ---------------------------------------------------------------------
+#  电量
+# ---------------------------------------------------------------------
+sensor:
+  - platform: adc
+    pin: GPIO34
+    id: battery_voltage
+    update_interval: never
+    internal_attenuation: 12db
+    filters:
+      - multiply: 2.0
+
+  - platform: template
+    id: battery_level
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    update_interval: never
+    lambda: |-
+      // 2 节 AA:满电约 3.2V,用 2.0V~3.0V 线性映射到 0~100
+      float v = id(battery_voltage).state;
+      if (v <= 0) return 0;
+      return clamp((v - 2.0) / 1.0 * 100.0, 0.0, 100.0);
+
+mqtt:
+  broker: ${mqtt_broker_ip}
+  port: ${mqtt_port}
+  username: ""
+  password: ""
+  discovery: false
+  log_topic: null
+
+  birth_message:
+    topic: ${mqtt_topic_prefix}/status
+    payload: online
+    qos: 1
+    retain: false
+
+  shutdown_message:
+    topic: ${mqtt_topic_prefix}/status
+    payload: offline
+    qos: 1
+    retain: false
+
+  sensor:
+    - id: battery_level
+      state_topic: ${mqtt_topic_prefix}/battery
+      qos: 1
+      retain: true
+
+script:
+  # 每次醒来都把状态和心跳重发一遍。
+  # 直接调 publish 是为了保证"状态没变也照样发",服务器不用等下次开关门。
+  - id: publish_now
+    then:
+      - delay: 5s
+      - lambda: |-
+          bool is_open = id(door_contact).state;
+          if (!mqtt_client->is_connected()) {
+            ESP_LOGW("door", "MQTT 没连上,这一轮放弃(下次醒来再试)");
+            return;
+          }
+          mqtt_client->publish("${mqtt_topic_prefix}/state",
+                               is_open ? "OPEN" : "CLOSED", false);
+          mqtt_client->publish("${mqtt_topic_prefix}/heartbeat", "alive", false);
+          mqtt_client->publish("${mqtt_topic_prefix}/battery",
+                               to_string(id(battery_level).state), true);
+          ESP_LOGI("door", "已上报: 门=%s 电量=%.0f%%",
+                   is_open ? "开" : "关", id(battery_level).state);

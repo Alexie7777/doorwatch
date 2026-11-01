@@ -1,0 +1,164 @@
+# =====================================================================
+#  doorwatch × Home Assistant —— 归一化模板
+#
+#  放法:复制到 HA 的 configuration.yaml 里(顶层),或者
+#        configuration.yaml 里加一行:
+#            template: !include templates.yaml
+#
+#  为什么要有这一层:
+#    Home Assistant 里,一个门磁会冒出好几个 binary_sensor,名字还带厂商前缀。
+#    直接在自动化里引用原始实体,会出现三个问题:
+#      1. on/off 的含义可能和"门开/门关"相反(磁力门吸的"磁铁吸附"=门关)
+#      2. 实体名太长、换个集成就变,自动化一堆硬编码
+#      3. 传感器掉线时,集成不会把实体置为 unavailable,而是保留最后一次的值
+#
+#  ★★ 第 3 点是本文件存在的最主要理由,也是最容易踩的坑:
+#
+#    hass-xiaomi-miot 集成在设备无响应时,实体不会变成 unavailable,
+#    而是无限期保留最后一次读到的状态(社区 issue #2699)。
+#    如果只看 states() 是 'on' 还是 'off',门磁电池耗尽、网关断电之后,
+#    看板会一直显示"门开着"—— 传感器明明已经死了,看板却在撒谎。
+#    这正是 doorwatch 最核心要避免的事。
+#
+#    所以"传感器是否还活着"不能看状态值,要看**它最后一次上报是什么时候**。
+#
+#  ★★ 判据用 last_reported,不要用 last_updated —— 这一条踩过两次坑:
+#
+#    Home Assistant 官方对三个时间戳的定义:
+#      last_changed  = 状态值最后一次变化的时间
+#      last_updated  = 状态**或属性**最后一次变化的时间
+#      last_reported = 实体最后一次「上报」状态的时间
+#
+#    关键在 HA 源码(homeassistant/core.py, async_set_internal):
+#      状态值和属性都没变时,走的是"提前返回"分支 —— 只更新 last_reported,
+#      **last_updated 根本不会动**。
+#
+#    而 xiaomi_miot 每次轮询都会把状态写一遍(force_update 默认 false),
+#    门一直关着、属性也没变的时候,last_updated 就一直冻在最后一次开门的那一刻。
+#
+#    如果拿 last_updated 当新鲜度判据,会出现这个荒唐局面:
+#      门关着不动 → last_updated 冻住 → 超过 STALE_SECONDS → 报 UNKNOWN
+#      → 看板一直显示"状态未知",可传感器其实活得好好的。
+#    这不是"撒谎",但比撒谎更招人烦 —— 没人会用一块永远显示未知的看板。
+#
+#    last_reported 才是对的:集成每次轮询写一次状态,它就往前推一次。
+#    传感器真死了,轮询失败不写状态,last_reported 就不动 —— 正好是我们要的。
+#
+#    ★ 老版本 HA 没有 last_reported(2025 年年中才加的),
+#      模板会自动回退到 last_updated。
+#      回退后如果看板一直显示"未知",说明你的 HA 太老,升级即可。
+#      可以在「开发者工具 → 模板」里跑这一行验证:
+#          {{ states('binary_sensor.你的门磁').state }} ← 这个是文本
+#          {{ states.binary_sensor.你的门磁.last_reported }}
+#      第二行报错就说明 HA 没有 last_reported。
+#
+#  ★★ 顺带一个 HA 模板的坑(automation 里也用得上):
+#      states('entity.id')  **只返回状态文本**,不是状态对象。
+#      要拿 last_updated / last_reported 这类属性,
+#      必须用对象写法 states.entity.id.last_reported。
+#      写成 states('entity.id').last_reported 会在模板里直接报错。
+#
+#  ★ 方向开关在下面每扇门的 DOOR_ON_MEANS_OPEN。
+#    用 xiaomi_miot 时默认就是对的:
+#      集成识别到 magnet-sensor 服务 + contact-state 属性时,
+#      会自动把状态反转(reverse_state = True),并且 device_class 标成 door,
+#      所以 HA 里 on = 门开着、off = 门关着。
+#    但仍建议到货后现场开一次门验一次(见 README「到货后 10 分钟验收」)。
+#    如果看板显示反了,把 true 改成 false,保存后 HA 会自动重载。
+#
+#  ★ STALE_SECONDS 要配合 xiaomi_miot 的轮询间隔设置:
+#    xiaomi_miot 默认 60 秒轮询一次(可用 interval_seconds 改)。
+#      轮询 30s → STALE_SECONDS 180 合适(约 6 次轮询)
+#      轮询 60s → STALE_SECONDS 180 偏紧(约 3 次),建议 240
+#      轮询 90s → STALE_SECONDS 300 比较稳
+#    改轮询间隔:configuration.yaml 里 xiaomi_miot: { interval_seconds: 30 }
+#
+#  ★ 这两个模板必须配着 automations.yaml 用:
+#    模板实体默认只在"它引用的实体变了"时才重算。
+#    传感器死了以后状态值是不变的('on' 还是 'on'),模板也就不重算 ——
+#    上面的新鲜度判据会一直卡在最后一次的结果上。
+#    automations.yaml 里那条"每分钟体检"用 homeassistant.update_entity
+#    强行让它们每分钟重算一次,新鲜度判据才拿得到"此刻"的时间。
+#
+#  ★ 模板输出 UNKNOWN 时的含义:
+#    "我现在读不到这扇门的状态",而不是"门开着"。
+#    doorwatch 的服务端认识 UNKNOWN:收到就把状态打回"未知"并标记离线,
+#    绝不会继续显示上次的开/关。
+# =====================================================================
+
+template:
+  - sensor:
+      # ---------------------------------------------------------------
+      # IT 办公室 —— 归一化后的门状态
+      # ---------------------------------------------------------------
+      - name: "Doorwatch IT Office Door State"
+        unique_id: doorwatch_it_office_door_state
+        state: >-
+          {% set src = states.binary_sensor.aqara_it_office %}
+          {% set DOOR_ON_MEANS_OPEN = true %}
+          {% set STALE_SECONDS = 180 %}
+          {% set seen = src.last_reported | default(src.last_updated, true) %}
+          {% set alive = seen is defined and seen is not none
+                        and (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
+          {% if src in ['on', 'off'] and alive %}
+            {% set is_open = (src == 'on') == DOOR_ON_MEANS_OPEN %}
+            {{ 'OPEN' if is_open else 'CLOSED' }}
+          {% else %}
+            {{ 'UNKNOWN' }}
+          {% endif %}
+
+      # ---------------------------------------------------------------
+      # IT 办公室 —— 传感器是否还活着(只由更新时间决定)
+      # ---------------------------------------------------------------
+      - name: "Doorwatch IT Office Door Readable"
+        unique_id: doorwatch_it_office_door_readable
+        state: >-
+          {% set STALE_SECONDS = 180 %}
+          {% set src = states.binary_sensor.aqara_it_office %}
+          {% set seen = src.last_reported | default(src.last_updated, true) %}
+          {% if src in ['on', 'off'] and seen is defined and seen is not none
+                and (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
+            {{ true }}
+          {% else %}
+            {{ false }}
+          {% endif %}
+
+      # ---------------------------------------------------------------
+      # 机房(第二扇门,照抄上面的写法改实体名和 unique_id 即可)
+      # - name: "Doorwatch Server Room Door State"
+      #   unique_id: doorwatch_server_room_door_state
+      #   state: >-
+      #     {% set src = states.binary_sensor.aqara_server_room %}
+      #     {% set DOOR_ON_MEANS_OPEN = true %}
+      #     {% set STALE_SECONDS = 180 %}
+      #     {% set seen = src.last_reported | default(src.last_updated, true) %}
+      #     {% set alive = seen is defined and seen is not none
+      #                   and (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
+      #     {% if src in ['on', 'off'] and alive %}
+      #       {% set is_open = (src == 'on') == DOOR_ON_MEANS_OPEN %}
+      #       {{ 'OPEN' if is_open else 'CLOSED' }}
+      #     {% else %}
+      #       {{ 'UNKNOWN' }}
+      #     {% endif %}
+      #
+      # - name: "Doorwatch Server Room Door Readable"
+      #   unique_id: doorwatch_server_room_door_readable
+      #   state: >-
+      #     {% set STALE_SECONDS = 180 %}
+      #     {% set src = states.binary_sensor.aqara_server_room %}
+      #     {% set seen = src.last_reported | default(src.last_updated, true) %}
+      #     {% if src in ['on', 'off'] and seen is defined and seen is not none
+      #           and (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
+      #       {{ true }}
+      #     {% else %}
+      #       {{ false }}
+      #     {% endif %}
+
+# =====================================================================
+#  新增第二扇门时,记得同步改三处:
+#    1. 这里加一组 sensor(实体名 + unique_id)
+#    2. automations.yaml 里加对应的触发器和主题
+#    3. doorwatch 的 config/doors.json 里加对应门的 deviceId
+#       —— 三处的 deviceId 必须完全一致,否则 doorwatch 会打印
+#          "收到未登记设备" 的告警并丢弃消息。
+# =====================================================================

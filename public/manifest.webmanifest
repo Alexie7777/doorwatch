@@ -1,0 +1,20 @@
+{
+  "name": "IT 办公室状态",
+  "short_name": "IT 状态",
+  "description": "查看 IT 办公室是否关门,不用白跑一趟",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b0f14",
+  "theme_color": "#0b0f14",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

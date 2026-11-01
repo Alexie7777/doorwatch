@@ -1,0 +1,44 @@
+services:
+  doorwatch:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: doorwatch:1.0.0
+    container_name: doorwatch
+    restart: unless-stopped
+    ports:
+      # 看板(HTTPS):把 8443 映射出来
+      - "8443:8443"
+      # MQTT broker:ESP32 传感器要连这个端口
+      - "1883:1883"
+      # 校园网开了 AP 隔离、手机访问不到映射端口时,
+      # 改成 network_mode: host(仅 Linux),并在下面注释掉 ports
+    # network_mode: host
+    environment:
+      TZ: Asia/Shanghai
+      PORT: "8443"
+      MQTT_PORT: "1883"
+      DATA_DIR: /data
+      # 自签证书的 SAN 里要写上你实际用的域名/IP,逗号分隔
+      CERT_NAMES: "${CERT_NAMES:-}"
+      # 电池版传感器要放宽到 45 分钟;USB 供电保持默认 180 秒
+      ONLINE_TIMEOUT_MS: "${ONLINE_TIMEOUT_MS:-180000}"
+      # 写操作密钥,留空则首次启动自动生成到 /data/ADMIN_KEY.txt
+      ADMIN_KEY: "${ADMIN_KEY:-}"
+      LOG_LEVEL: info
+    volumes:
+      # SQLite 数据库 / 自签证书 / 管理密钥 都持久化在这里
+      - doorwatch-data:/data
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('https://127.0.0.1:8443/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  doorwatch-data:

@@ -1,0 +1,205 @@
+# =====================================================================
+#  doorwatch × Home Assistant —— 自动化
+#
+#  放法:复制到 HA 的 configuration.yaml 里(顶层),或者
+#        configuration.yaml 里加一行:
+#            automation: !include automations.yaml
+#
+#  语法说明:用的是 HA 2024.10+ 的新写法(triggers / conditions / actions)。
+#    新版 HA 里 `service:` 已经被 `action:` 取代,老的 `platform:` 触发器
+#    写法也会弹弃用警告 —— 与其将来再改,不如一步到位。
+#
+#  ★ 三条自动化:
+#    1. 状态变化 → 立刻推给 doorwatch(门一开,看板马上变)
+#    2. 每分钟体检 → 刷新模板 + 推状态和心跳;读不到就立刻推 offline
+#    3. HA 启动 → 补发一次
+#
+#  ★ 这里出现的 sensor.xxx 全是 templates.yaml 里定义的模板实体,
+#    名字固定,你不用改。
+#    真正需要你改的只有 templates.yaml 一个文件里的三样东西:
+#       · binary_sensor.aqara_it_office  → 换成你的门磁实体 id
+#       · DOOR_ON_MEANS_OPEN             → 方向开关(看板显示反了就翻它)
+#       · STALE_SECONDS                 → 多久没更新算失联
+#
+#  ★ deviceId(主题最后一段)必须和 doorwatch 的 config/doors.json
+#    里的 deviceId 完全一致,这里写 it-office-door。
+#
+#  ★★ HA 模板语法坑(写之前先看一眼,否则自动化会每分钟报错):
+#      states('entity.id')        → 只返回**状态文本**,例如 "on"
+#      states.entity.id.state     → 状态文本
+#      states.entity.id.attributes → 属性字典
+#      states.entity.id.last_reported / last_updated / last_changed → 时间戳
+#      也就是说:要拿时间戳,必须用「对象写法」states.entity.id.xxx,
+#      写成 states('entity.id').last_updated 会直接抛模板错误。
+# =====================================================================
+
+- id: doorwatch_it_office_state
+  alias: "门磁状态 → doorwatch(IT 办公室)"
+  description: "门磁开合变化时,把状态推给 doorwatch。看板据此显示开/关。"
+  mode: queued
+  max: 5
+  triggers:
+    - trigger: state
+      entity_id: sensor.doorwatch_it_office_door_state
+  actions:
+    # ★ 注意这里**不**限制状态只能是 OPEN/CLOSED。
+    #   模板在传感器读不到时会输出 UNKNOWN,那正是最该上报的时刻:
+    #   doorwatch 收到 UNKNOWN 会立刻把状态打回"未知",
+    #   而不是继续显示上次的开/关。
+    - action: mqtt.publish
+      data:
+        topic: "doorwatch/it-office-door/state"
+        payload: "{{ states('sensor.doorwatch_it_office_door_state') }}"
+        qos: 1
+        retain: true
+
+# ---------------------------------------------------------------------
+#  ★ 这条是本项目正确性的关键,别删。
+#
+#  为什么要"每分钟体检",而不是光靠心跳超时:
+#
+#    模板实体默认只在"它引用的实体变了"时才重算。
+#    而传感器死了以后,状态值是不变的('on' 还是 'on'),
+#    于是模板也不会重算,新鲜度判据会一直卡在最后一次的结果上 ——
+#    传感器已经死了,模板还写着 OPEN。
+#
+#    update_entity 就是来解决这件事的:每分钟强行算一次。
+#    (HA 源码:update_entity → async_update_ha_state(force_refresh=True)
+#      → async_device_update() → TemplateEntity.async_update() → 重新渲染模板)
+#
+#    判断"还活着吗"用了两个条件,必须同时成立:
+#    ① readable 说能读到
+#    ② readable 这个模板自己刚被刷新过(120 秒内)
+#    ② 是保险丝:万一 update_entity 因为实体名写错而失败,
+#    模板值会一直停在老样子 —— 那时候宁可报"未知",也绝不能报"还活着"。
+#
+#    ★ 这里用 last_reported 而不是 last_updated:
+#      模板重算之后如果算出来的值没变(还是 on 还是 on),
+#      HA 走的是"提前返回"分支,last_updated 不动、只有 last_reported 动。
+#      用 last_updated 做保险丝的话,保险丝会永远失效 → 每分钟都报离线。
+#
+#    三条路径各自独立地保护"不许撒谎"这条底线:
+#    · 上面的状态变化自动化 → 推 UNKNOWN → doorwatch 立刻打回未知
+#    · 这条体检自动化       → 推 offline → doorwatch 立刻打回未知
+#    · doorwatch 自己的心跳超时(180 秒)→ 兜底
+#    任何一条生效,看板都不会继续显示上次的开/关。
+# ---------------------------------------------------------------------
+- id: doorwatch_it_office_report
+  alias: "每分钟体检 → doorwatch(IT 办公室)"
+  description: "每分钟刷新模板实体,确认传感器还活着;活着就推状态+心跳,读不到就立刻推 offline。"
+  mode: single
+  triggers:
+    - trigger: time_pattern
+      minutes: "/1"
+  actions:
+    # ① 强制模板实体重算,让新鲜度判据拿到"此刻"的时间
+    - action: homeassistant.update_entity
+      target:
+        entity_id:
+          - sensor.doorwatch_it_office_door_state
+          - sensor.doorwatch_it_office_door_readable
+
+    # ② 判断还活着没有
+    - if:
+        - condition: template
+          value_template: >
+            {% set r = states.sensor.doorwatch_it_office_door_readable %}
+            {% set ts = r.last_reported | default(r.last_updated, true) %}
+            {{ r is not none and r.state == 'on'
+               and ts is defined and ts is not none
+               and (as_timestamp(now()) - as_timestamp(ts)) < 120 }}
+      then:
+        - action: mqtt.publish
+          data:
+            topic: "doorwatch/it-office-door/state"
+            payload: "{{ states('sensor.doorwatch_it_office_door_state') }}"
+            qos: 1
+            retain: true
+        - action: mqtt.publish
+          data:
+            topic: "doorwatch/it-office-door/heartbeat"
+            payload: "alive"
+            qos: 1
+            retain: false
+      else:
+        # 读不到传感器 → 立刻告诉 doorwatch "状态未知"。
+        # 不等它自己超时,因为超时窗口里它显示的是上次的开/关。
+        - action: mqtt.publish
+          data:
+            topic: "doorwatch/it-office-door/status"
+            payload: "offline"
+            qos: 1
+            retain: false
+
+- id: doorwatch_it_office_startup
+  alias: "HA 启动 → 补发一次(IT 办公室)"
+  description: "HA 重启后补发当前状态,避免看板长时间停留在旧状态。"
+  mode: single
+  triggers:
+    - trigger: homeassistant
+      event: start
+  actions:
+    # 等一分钟,让 xiaomi_miot 集成连上米家云、完成第一次轮询
+    - delay: "00:01:00"
+    - action: homeassistant.update_entity
+      target:
+        entity_id:
+          - sensor.doorwatch_it_office_door_state
+          - sensor.doorwatch_it_office_door_readable
+    - if:
+        - condition: template
+          value_template: >
+            {% set r = states.sensor.doorwatch_it_office_door_readable %}
+            {% set ts = r.last_reported | default(r.last_updated, true) %}
+            {{ r is not none and r.state == 'on'
+               and ts is defined and ts is not none
+               and (as_timestamp(now()) - as_timestamp(ts)) < 120 }}
+      then:
+        - action: mqtt.publish
+          data:
+            topic: "doorwatch/it-office-door/state"
+            payload: "{{ states('sensor.doorwatch_it_office_door_state') }}"
+            qos: 1
+            retain: true
+        - action: mqtt.publish
+          data:
+            topic: "doorwatch/it-office-door/heartbeat"
+            payload: "alive"
+            qos: 1
+            retain: false
+      else:
+        # 启动时传感器就读不到 —— 老老实实说不知道。
+        # doorwatch 收到 UNKNOWN 会把状态打回 unknown + 离线。
+        - action: mqtt.publish
+          data:
+            topic: "doorwatch/it-office-door/state"
+            payload: "{{ states('sensor.doorwatch_it_office_door_state') }}"
+            qos: 1
+            retain: true
+        - action: mqtt.publish
+          data:
+            topic: "doorwatch/it-office-door/status"
+            payload: "offline"
+            qos: 1
+            retain: false
+
+# =====================================================================
+#  挂到墙上之前,先做这个:
+#  微信/Telegram 之类的推送,出门前手机上收到一条,比打开网页更快。
+#  需要先装对应的 notify 集成,再把下面 action 换成 notify.mobile_app_xxx
+# =====================================================================
+#
+# - id: doorwatch_it_office_notify
+#   alias: "门开了 → 推送提醒(IT 办公室)"
+#   mode: queued
+#   max: 5
+#   triggers:
+#     - trigger: state
+#       entity_id: sensor.doorwatch_it_office_door_state
+#       to: "OPEN"
+#   actions:
+#     - action: notify.mobile_app_xxx
+#       data:
+#         title: "IT 办公室"
+#         message: "门开着,IT 有人"
+#

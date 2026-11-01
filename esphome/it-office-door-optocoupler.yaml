@@ -1,0 +1,179 @@
+# =====================================================================
+#  IT 办公室门磁 —— ESPHome 固件(复用现有门禁门磁 + 光耦隔离版)
+#
+#  适用场景:
+#    学校已经装了门禁系统,门框上已经有门磁(磁力开关),
+#    不想再买新的门磁传感器,想直接"蹭"现有的。
+#
+#  ⚠️ 为什么必须加光耦(PC817),不能直接把门磁线接到 ESP32:
+#
+#    门禁控制器的门磁输入端,内部通常是"12V/24V 经电阻上拉到输入端",
+#    门磁触点接的是控制器的 GND。也就是说,门磁线的另一端相对地是 12V/24V。
+#
+#    直接接到 ESP32 的 GPIO → 12V 灌进 3.3V 引脚 → ESP32 立刻烧毁。
+#    光耦把这边的 12/24V 和 ESP32 的 3.3V 完全隔开,两边不共地,
+#    顺便也防了门禁系统的地环路干扰。
+#
+#  接线(先看下一节的"先量三处电压",再动手):
+#
+#    【控制器侧 —— 12V/24V 那一侧】
+#
+#      门磁 COM 端子 ──┬── 门禁控制器 DOOR/MAG 输入
+#                      └── 1kΩ ──▶|── PC817 LED ── 门磁 NC 端子
+#                                          (LED 阳极接电阻侧,阴极接 NC)
+#      门磁的另一个端子本来接控制器 GND,保持不动。
+#
+#    【ESP32 侧 —— 3.3V 那一侧】
+#
+#      3V3 ── 4.7kΩ ──┬── PC817 集电极 C ──▶ ESP32 GPIO
+#                     │
+#                   PC817 发射极 E ── GND
+#
+#    逻辑:
+#      门磁触点闭合(门关)→ LED 亮 → 光耦导通 → GPIO 被拉低 = LOW = 门关
+#      门磁触点断开(门开)→ LED 灭 → 光耦截止 → 4.7kΩ 上拉 → HIGH = 门开
+#      正好和 doorwatch 的约定一致(高=开,低=关)。
+#
+#      如果实测反了(门关时 GPIO 是高),把下面 binary_sensor 的
+#      inverted 改成 true 即可。
+#
+#  先量三处电压(决定电阻值,也决定要不要光耦):
+#
+#    1. 门禁控制器的电源:是 12V 还是 24V 直流?
+#       → 12V:LED 限流电阻用 1kΩ / 0.25W
+#       → 24V:LED 限流电阻用 2.2kΩ / 0.5W
+#    2. 门磁两个端子对控制器 GND 的电压:
+#       → 门关时约 0V,门开时约 12/24V  → 控制器有上拉,必须光耦(本文件)
+#       → 两个状态都接近 0V           → 纯干接点,理论上可直接接,
+#                                       但仍建议加光耦(便宜,且防呆)
+#    3. 门禁电源是不是带 UPS 后备的?
+#       带的话最好 —— 停电时门锁还有电,门禁不瘫,你的看板也跟着一起活。
+#
+#  电源怎么来(ESP32 需要 3.3V,门禁那边是 12/24V):
+#
+#    推荐:门禁控制器的 DC 输入(12/24V) → 降压模块(MP1584EN,12V→5V,¥3)
+#           → ESP32 的 5V/VIN 引脚
+#    ⚠️ 千万别把 12/24V 直接接到 ESP32 的 5V 或 VIN,会烧。
+#    ⚠️ 也别把 5V 接到 3V3 引脚(会绕过板载稳压给芯片直供,轻则不稳重则烧)。
+#    降压模块要在 5V 和 GND 之间并一个 10uF 电容,输出更干净。
+#
+#    备选:门边的读卡器供电(也是 12/24V 常电,通常更容易找到端子)
+#    不推荐:直接取电锁两端的电压 —— 有些门锁是脉冲供电,取不到稳定电压。
+# =====================================================================
+
+substitutions:
+  device_name: it-office-door
+  friendly_name: "IT 办公室门磁(复用门禁)"
+  mqtt_broker_ip: "192.168.1.10"      # ← 改成部署 doorwatch 的那台机器的 IP
+  mqtt_port: "1883"
+  mqtt_topic_prefix: doorwatch/it-office-door
+  door_pin: GPIO21
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  min_version: 2024.6.0
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+logger:
+  level: INFO
+
+api:
+  reboot_timeout: 15min
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  power_save_mode: none          # 门磁上报延迟要准,别省电
+  ap:
+    ssid: "IT-Door-Setup"
+    password: !secret ap_password
+  captive_portal:                # 连不上 WiFi 时开热点,用手机配网
+
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: Asia/Shanghai
+
+# ---------------------------------------------------------------------
+#  门磁(经光耦隔离)
+#
+#  这里 pullup: false —— 3.3V 侧的 4.7kΩ 上拉在外部光耦电路里。
+#  如果你实际测出来是纯干接点、没加光耦,那要改回 pullup: true。
+# ---------------------------------------------------------------------
+binary_sensor:
+  - platform: gpio
+    id: door_contact
+    pin:
+      number: ${door_pin}
+      pullup: false
+      inverted: false
+    device_class: door
+    filters:
+      # 去抖:门被风吹一下、有人推一把都会抖好几秒,滤掉
+      - delayed_on: 1000ms
+      - delayed_off: 1000ms
+    on_press:
+      - logger.log: "门被打开了"
+    on_release:
+      - logger.log: "门关上了"
+
+# ---------------------------------------------------------------------
+#  MQTT
+# ---------------------------------------------------------------------
+mqtt:
+  broker: ${mqtt_broker_ip}
+  port: ${mqtt_port}
+  username: ""
+  password: ""
+  discovery: false
+  log_topic: null
+
+  # 连接建立时发 online
+  birth_message:
+    topic: ${mqtt_topic_prefix}/status
+    payload: online
+    qos: 1
+    retain: false
+
+  # 掉电/离线时由 Broker 代发 offline(遗嘱消息)
+  shutdown_message:
+    topic: ${mqtt_topic_prefix}/status
+    payload: offline
+    qos: 1
+    retain: false
+
+  binary_sensor:
+    - id: door_contact
+      state_topic: ${mqtt_topic_prefix}/state
+      payload_on: "OPEN"
+      payload_off: "CLOSED"
+      qos: 1
+      retain: true
+
+script:
+  - id: publish_heartbeat
+    then:
+      - lambda: |-
+          if (mqtt_client->is_connected()) {
+            mqtt_client->publish("${mqtt_topic_prefix}/heartbeat", "alive", false);
+          }
+
+interval:
+  # 心跳:告诉服务器"我还活着"
+  - interval: 60s
+    then:
+      - script.execute: publish_heartbeat
+
+status_led:
+  pin:
+    number: GPIO2
+    inverted: false

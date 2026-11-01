@@ -1,0 +1,19 @@
+node_modules/
+data/
+data-demo/
+*.log
+.DS_Store
+.env
+
+# ESPHome 编译产物与密钥 —— secrets.yaml 绝对不能进仓库
+esphome/secrets.yaml
+esphome/.esphome/
+esphome/*.bin
+esphome/*.ota
+esphome/.pioenvs/
+esphome/.piolibdeps/
+
+# 测试产物:截图会随仓库走(README 要引用),其余忽略
+test/artifacts/*
+!test/artifacts/dashboard-mobile-normal.png
+!test/artifacts/dashboard-desktop.png

@@ -1,0 +1,28 @@
+{
+  "doors": [
+    {
+      "id": "it-office",
+      "name": "IT 办公室",
+      "location": "行政楼 A 座 2F",
+      "deviceId": "it-office-door",
+      "openHint": "IT 有人在,直接过来就行",
+      "closedHint": "门已关,IT 暂时不在,先别跑一趟"
+    },
+    {
+      "id": "server-room",
+      "name": "机房",
+      "location": "行政楼 A 座 1F",
+      "deviceId": "server-room-door",
+      "openHint": "机房有人,调试设备可直接找我们",
+      "closedHint": "机房无人,请勿进入"
+    },
+    {
+      "id": "it-store",
+      "name": "IT 备件间",
+      "location": "行政楼 A 座 2F",
+      "deviceId": "it-store-door",
+      "openHint": "备件间有人,取件直接来",
+      "closedHint": "备件间无人,需要请先联系 IT"
+    }
+  ]
+}

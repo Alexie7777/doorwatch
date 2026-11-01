@@ -1,0 +1,10 @@
+# 仓库里统一存 LF(服务器上是 Linux,Docker 构建也按 LF 处理最稳)
+# 工作区不做强制转换,只保证入库时是 LF
+* text=auto
+
+# 二进制资源不做行尾转换
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary
+*.bin binary

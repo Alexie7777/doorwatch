@@ -1,0 +1,38 @@
+# Docker 构建上下文只需要 server / public / config 三个目录
+# 排除掉其余的,否则 node_modules 会被整个塞进构建上下文,
+# 在服务器上 build 会慢到怀疑人生(Windows 上尤其夸张)
+node_modules
+npm-debug.log*
+.git
+.gitignore
+.dockerignore
+
+# 运行时数据:SQLite / 自签证书 / 管理密钥
+data
+data-demo
+*.db
+*.db-journal
+
+# 不进镜像的东西
+test
+docs
+ha
+esphome
+tools
+deploy
+package-lock.json.bak
+
+# 密钥与本地配置
+.env
+.env.*
+esphome/secrets.yaml
+*.pem
+*.key
+*.crt
+
+# 杂项
+*.log
+.DS_Store
+Thumbs.db
+.vscode
+.idea
