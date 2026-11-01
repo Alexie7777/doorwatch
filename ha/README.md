@@ -326,12 +326,21 @@ doorwatch 容器只该挂 `doorwatch-data:/data`。
 
 > ★ **只需要改 `templates.yaml` 一个文件里的实体名**(本仓库已填好,一般不用动)。
 > `automations.yaml` 里出现的 `sensor.doorwatch_it_office_door_state` /
-> `sensor.doorwatch_it_office_door_readable` 是本套模板自己定义的实体,
+> `binary_sensor.doorwatch_it_office_door_readable` 是本套模板自己定义的实体,
 > 名字固定,不用动。要改的只有 `templates.yaml` 里那 2 处
 > `binary_sensor.isa_dw2hl_b95b_magnet_sensor`(两个模板各一处,全局替换一下就行)。
 >
 > ★ `automations.yaml` 里的主题后缀 `it-office-door` 是 **deviceId**,
 > 和实体名是两回事,别搞混(见第五节)。
+
+> ★★ **可读性模板必须放在 `binary_sensor:` 下面,不能挪到 `sensor:`**。
+> `sensor` 平台会把 `{{ true }}` / `{{ false }}` 渲染成字符串 `"True"` / `"False"`,
+> 而自动化里的保险丝判的是 `r.state == 'on'` —— 对 sensor 来说**永远不成立**,
+> 结果就是每分钟都走 else 分支推 `offline`,看板一直显示「状态未知」。
+> `binary_sensor` 平台会用 `result_as_boolean()` 把结果转成 `on` / `off`,保险丝才判得对。
+> (HA 源码:`components/template/binary_sensor.py` 的 `_update_state`)
+>
+> 实体 id 也跟着变:`binary_sensor.doorwatch_it_office_door_readable`。
 
 ### ★ 为什么模板层要用「上报时间」判断传感器死活
 
@@ -426,7 +435,7 @@ states.binary_sensor.x.last_reported       # ✅ 时间戳要这么写
   target:
     entity_id:
       - sensor.doorwatch_it_office_door_state
-      - sensor.doorwatch_it_office_door_readable
+      - binary_sensor.doorwatch_it_office_door_readable
 ```
 
 每分钟强行重算一次,新鲜度判据才拿得到"此刻"的时间。
@@ -546,7 +555,7 @@ MQTT_PASSWORD: 你的密码
 
 具体表现:
 
-1. 断电后,HA 里 `sensor.doorwatch_it_office_door_readable` 应该变成 `off`
+1. 断电后,HA 里 `binary_sensor.doorwatch_it_office_door_readable` 应该变成 `off`
    (或者 `sensor.doorwatch_it_office_door_state` 变成 `UNKNOWN`)
 2. 看板随即显示「状态未知」,并标注「传感器离线」
 3. 千万别出现这种情况:看板还稳稳地显示「门开着」——

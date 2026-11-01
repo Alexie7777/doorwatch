@@ -221,7 +221,7 @@ template:
 **设置 → 工具 → 状态**,搜 `doorwatch_it_office`:
 
 - `sensor.doorwatch_it_office_door_state` 应该是 `OPEN` / `CLOSED` / `UNKNOWN`
-- `sensor.doorwatch_it_office_door_readable` 应该是 `on`(能读到)/ `off`(读不到)
+- `binary_sensor.doorwatch_it_office_door_readable` 应该是 `on`(能读到)/ `off`(读不到)
 
 两个都没有 → YAML 没装对,回 3.1 查。
 

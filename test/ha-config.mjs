@@ -149,10 +149,18 @@ check('templates.yaml 每个配置段的键都在 HA 官方允许的范围内', 
   badSectionKeys.length ? `非法键: ${badSectionKeys.join(', ')}` : '');
 
 console.log('\n[test] 源实体');
-const templateSensorList = templatesDoc?.[0]?.sensor ?? [];
+/** 所有配置段里的模板实体(可能是 sensor,也可能是 binary_sensor) */
+const allEntities = [];
+for (const section of (Array.isArray(templatesDoc) ? templatesDoc : [])) {
+  for (const [platform, list] of Object.entries(section ?? {})) {
+    for (const entity of list ?? []) allEntities.push({ platform, ...entity });
+  }
+}
+const byUniqueId = new Map(allEntities.map((e) => [e.unique_id, e]));
+
 const srcEntities = new Set();
-for (const s of templateSensorList) {
-  const m = /states\.([a-z_]+\.[a-z0-9_]+)/.exec(String(s.state ?? ''));
+for (const e of allEntities) {
+  const m = /states\.([a-z_]+\.[a-z0-9_]+)/.exec(String(e.state ?? ''));
   if (m) srcEntities.add(m[1]);
 }
 check('templates.yaml 读到的是门磁实体', srcEntities.size > 0, [...srcEntities].join(', '));
@@ -164,22 +172,52 @@ check('源实体已填成实际设备(不再是 aqara_it_office 占位符)',
 check('源实体不是 MIoT 原始属性 contact_state(极性相反)',
   ![...srcEntities].some((e) => e.endsWith('_contact_state')));
 
-const templateSensors = (templatesDoc?.[0]?.sensor ?? []).map((s) => s.unique_id);
+const templateSensors = allEntities.map((e) => e.unique_id);
 check('templates.yaml 定义了门状态模板', templateSensors.includes('doorwatch_it_office_door_state'));
 check('templates.yaml 定义了可读性模板', templateSensors.includes('doorwatch_it_office_door_readable'));
 
+/**
+ * ★★ 可读性模板必须是 binary_sensor,不是 sensor。
+ *   sensor 平台会把 {{ true }} / {{ false }} 渲染成字符串 "True"/"False",
+ *   而 automations.yaml 的保险丝判的是 r.state == 'on' —— 永远不成立,
+ *   结果是每分钟都推 offline,看板永远显示"状态未知"。
+ *   (HA 源码: components/template/binary_sensor.py 用 result_as_boolean 转 on/off)
+ */
+check('可读性模板在 binary_sensor 平台下(状态才是 on/off)',
+  byUniqueId.get('doorwatch_it_office_door_readable')?.platform === 'binary_sensor',
+  `实际平台: ${byUniqueId.get('doorwatch_it_office_door_readable')?.platform ?? '无'}`);
+check('门状态模板在 sensor 平台下(状态是 OPEN/CLOSED/UNKNOWN)',
+  byUniqueId.get('doorwatch_it_office_door_state')?.platform === 'sensor',
+  `实际平台: ${byUniqueId.get('doorwatch_it_office_door_state')?.platform ?? '无'}`);
+
 const referenced = new Set(
-  [...automationsText.matchAll(/sensor\.(doorwatch_[a-z0-9_]+)/g)].map((m) => m[1]),
+  [...automationsText.matchAll(/(?:binary_)?sensor\.(doorwatch_[a-z0-9_]+)/g)].map((m) => m[1]),
 );
 check('automations.yaml 引用了模板实体', referenced.size > 0, [...referenced].join(', '));
 const missing = [...referenced].filter((id) => !templateSensors.includes(id));
 check('automation 引用的模板实体都在 templates.yaml 里定义过', missing.length === 0,
   missing.length ? `缺: ${missing.join(', ')}` : '');
 
+/**
+ * ★ 保险丝必须引用 binary_sensor 平台的那个可读性实体。
+ *   写成 sensor.doorwatch_it_office_door_readable 的话,
+ *   states.sensor... 的 state 是 "True"/"False" 字符串,
+ *   r.state == 'on' 永远不成立 → 每分钟都推 offline → 看板永远"状态未知"。
+ */
+check('自动化按 binary_sensor 引用可读性实体',
+  /binary_sensor\.doorwatch_it_office_door_readable/.test(automationsCode),
+  '保险丝必须读 binary_sensor,状态才是 on/off');
+check('自动化没有按 sensor 引用可读性实体',
+  !/(?<!binary_)sensor\.doorwatch_it_office_door_readable/.test(automationsCode),
+  'sensor 平台的布尔是 "True"/"False",判 == "on" 永远不成立');
+
 console.log('\n[test] 方向开关与三态');
 check('templates.yaml 有 DOOR_ON_MEANS_OPEN 开关', templatesText.includes('DOOR_ON_MEANS_OPEN'));
 check('templates.yaml 会输出 UNKNOWN', templatesText.includes('UNKNOWN'));
 check('templates.yaml 有 STALE_SECONDS 阈值', templatesText.includes('STALE_SECONDS'));
+check('templates.yaml 只输出 OPEN/CLOSED/UNKNOWN 三种状态',
+  /'OPEN'/.test(templatesText) && /'CLOSED'/.test(templatesText)
+  && !/state:.*'[A-Z]{4,}'/.test(templatesCode));
 check('automation 有"每分钟体检"这条', automationsText.includes('homeassistant.update_entity'));
 check('automation 失联时会推 status=offline', automationsText.includes('payload: "offline"'));
 check('automation 会发心跳', automationsText.includes('/heartbeat'));

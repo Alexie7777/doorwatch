@@ -183,7 +183,7 @@ async function main() {
 
   const doorwatchSensors = [
     'sensor.doorwatch_it_office_door_state',
-    'sensor.doorwatch_it_office_door_readable',
+    'binary_sensor.doorwatch_it_office_door_readable',
   ];
 
   console.log('\n=== doorwatch 自己的模板实体 ===');

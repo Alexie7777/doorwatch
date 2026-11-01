@@ -134,6 +134,9 @@
 - sensor:
     # ---------------------------------------------------------------
     # IT 办公室 —— 归一化后的门状态
+    #
+    # ★ 状态值只可能是 OPEN / CLOSED / UNKNOWN 三种。
+    #   服务端只认这三个,别的值会被记成"看不懂的状态"并丢弃。
     # ---------------------------------------------------------------
     - name: "Doorwatch IT Office Door State"
       unique_id: doorwatch_it_office_door_state
@@ -142,65 +145,78 @@
         {% set DOOR_ON_MEANS_OPEN = true %}
         {% set STALE_SECONDS = 180 %}
         {% set seen = src.last_reported | default(src.last_updated, true) %}
-        {% set alive = seen is defined and seen is not none
-                      and (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
-        {% if src in ['on', 'off'] and alive %}
-          {% set is_open = (src == 'on') == DOOR_ON_MEANS_OPEN %}
-          {{ 'OPEN' if is_open else 'CLOSED' }}
+        {% set fresh = false %}
+        {% if src is not none and seen is defined and seen is not none %}
+          {% set fresh = (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
+        {% endif %}
+        {% if fresh and src.state in ['on', 'off'] %}
+          {{ 'OPEN' if (src.state == 'on') == DOOR_ON_MEANS_OPEN else 'CLOSED' }}
         {% else %}
           {{ 'UNKNOWN' }}
         {% endif %}
 
-    # ---------------------------------------------------------------
-    # IT 办公室 —— 传感器是否还活着(只由上报时间决定)
-    # ---------------------------------------------------------------
+# ---------------------------------------------------------------
+# IT 办公室 —— 传感器是否还活着(只由上报时间决定)
+#
+# ★★ 这里**必须用 binary_sensor,不能用 sensor**。
+#    sensor 平台会把 {{ true }} / {{ false }} 原样渲染成字符串
+#    "True" / "False",而 automations.yaml 的保险丝判的是 r.state == 'on'
+#    —— 对 sensor 来说永远不成立,结果就是每分钟都走 else 分支推 offline,
+#    看板永远显示"状态未知"。这不是模板写错,是平台选错了。
+#    binary_sensor 平台会用 result_as_boolean() 把结果转成 on/off,
+#    保险丝才判得对。
+#    (HA 源码: components/template/binary_sensor.py 的 _update_state)
+# ---------------------------------------------------------------
+- binary_sensor:
     - name: "Doorwatch IT Office Door Readable"
       unique_id: doorwatch_it_office_door_readable
       state: >-
-        {% set STALE_SECONDS = 180 %}
         {% set src = states.binary_sensor.isa_dw2hl_b95b_magnet_sensor %}
+        {% set STALE_SECONDS = 180 %}
         {% set seen = src.last_reported | default(src.last_updated, true) %}
-        {% if src in ['on', 'off'] and seen is defined and seen is not none
-              and (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
-          {{ true }}
-        {% else %}
-          {{ false }}
+        {% set fresh = false %}
+        {% if src is not none and seen is defined and seen is not none %}
+          {% set fresh = (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
         {% endif %}
+        {{ true if (fresh and src.state in ['on', 'off']) else false }}
 
-    # ---------------------------------------------------------------
-    # 机房(第二扇门,照抄上面的写法改实体名和 unique_id 即可)
-    # - name: "Doorwatch Server Room Door State"
-    #   unique_id: doorwatch_server_room_door_state
-    #   state: >-
-    #     {% set src = states.binary_sensor.aqara_server_room %}
-    #     {% set DOOR_ON_MEANS_OPEN = true %}
-    #     {% set STALE_SECONDS = 180 %}
-    #     {% set seen = src.last_reported | default(src.last_updated, true) %}
-    #     {% set alive = seen is defined and seen is not none
-    #                   and (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
-    #     {% if src in ['on', 'off'] and alive %}
-    #       {% set is_open = (src == 'on') == DOOR_ON_MEANS_OPEN %}
-    #       {{ 'OPEN' if is_open else 'CLOSED' }}
-    #     {% else %}
-    #       {{ 'UNKNOWN' }}
-    #     {% endif %}
-    #
-    # - name: "Doorwatch Server Room Door Readable"
-    #   unique_id: doorwatch_server_room_door_readable
-    #   state: >-
-    #     {% set STALE_SECONDS = 180 %}
-    #     {% set src = states.binary_sensor.aqara_server_room %}
-    #     {% set seen = src.last_reported | default(src.last_updated, true) %}
-    #     {% if src in ['on', 'off'] and seen is defined and seen is not none
-    #           and (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
-    #       {{ true }}
-    #     {% else %}
-    #       {{ false }}
-    #     {% endif %}
+# ---------------------------------------------------------------
+# 第二扇门(照抄上面两段,改实体名和 unique_id 即可)
+#
+# - sensor:
+#     - name: "Doorwatch Server Room Door State"
+#       unique_id: doorwatch_server_room_door_state
+#       state: >-
+#         {% set src = states.binary_sensor.第二扇门的实体 %}
+#         {% set DOOR_ON_MEANS_OPEN = true %}
+#         {% set STALE_SECONDS = 180 %}
+#         {% set seen = src.last_reported | default(src.last_updated, true) %}
+#         {% set fresh = false %}
+#         {% if src is not none and seen is defined and seen is not none %}
+#           {% set fresh = (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
+#         {% endif %}
+#         {% if fresh and src.state in ['on', 'off'] %}
+#           {{ 'OPEN' if (src.state == 'on') == DOOR_ON_MEANS_OPEN else 'CLOSED' }}
+#         {% else %}
+#           {{ 'UNKNOWN' }}
+#         {% endif %}
+#
+# - binary_sensor:
+#     - name: "Doorwatch Server Room Door Readable"
+#       unique_id: doorwatch_server_room_door_readable
+#       state: >-
+#         {% set src = states.binary_sensor.第二扇门的实体 %}
+#         {% set STALE_SECONDS = 180 %}
+#         {% set seen = src.last_reported | default(src.last_updated, true) %}
+#         {% set fresh = false %}
+#         {% if src is not none and seen is defined and seen is not none %}
+#           {% set fresh = (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
+#         {% endif %}
+#         {{ true if (fresh and src.state in ['on', 'off']) else false }}
 
 # =====================================================================
 #  新增第二扇门时,记得同步改三处:
-#    1. 这里加一组 sensor(实体名 + unique_id)
+#    1. 这里加一组 sensor + binary_sensor(实体名 + unique_id)
 #    2. automations.yaml 里加对应的触发器和主题
 #    3. doorwatch 的 config/doors.json 里加对应门的 deviceId
 #       —— 三处的 deviceId 必须完全一致,否则 doorwatch 会打印

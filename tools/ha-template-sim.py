@@ -1,0 +1,222 @@
+#!/usr/bin/env python3
+"""
+离线复刻 Home Assistant 的模板语义,在不装 HA 的前提下验证 ha/templates.yaml。
+
+复刻了这些(全部对照 HA 2026.10 源码):
+  · helpers/template/__init__.py
+      - TemplateEnvironment(ImmutableSandboxedEnvironment) 只设了
+        undefined=make_logging_undefined(strict=False) 和 finalize=_finalize_output,
+        **没有**开 trim_blocks / lstrip_blocks  → 空白原样保留
+      - render_complex() 末尾对结果 .strip()
+  · helpers/template/states.py
+      - _get_state_if_valid(): 实体不存在 → 返回 None(不是抛错)
+  · helpers/template/extensions/datetime.py
+      - as_timestamp(value): 非 datetime → parse_datetime(str(value)),
+        解析不出来就 raise_no_default → TemplateError
+  · util/dt.py
+      - as_timestamp(): 解析不出来 raise ValueError("not a valid date/time.")
+  · components/template/binary_sensor.py
+      - state 用 template.result_as_boolean(result) 转成 on/off
+  · components/template/template_entity.py
+      - 渲染抛 TemplateError → _attr_available = False → 实体变成 unavailable
+
+依赖: pip install jinja2
+用法:
+    node tools/dump-ha-templates.mjs
+    python tools/ha-template-sim.py        # 退出码 0 = 全部场景都渲染正常
+"""
+import datetime as dt
+import json
+import pathlib
+import sys
+
+try:
+    import jinja2
+except ImportError:
+    print("⚠️ 缺 jinja2,跳过模板仿真: python -m pip install jinja2")
+    sys.exit(0)
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+JSON_PATH = ROOT / "tools" / ".ha-templates.json"
+
+ENTITY = "binary_sensor.isa_dw2hl_b95b_magnet_sensor"
+
+
+class LoggingUndefined(jinja2.Undefined):
+    """HA 用的是 jinja2.Undefined 的子类(非 strict),语义一致。"""
+
+    def _log_message(self):  # HA 会打日志,这里静音
+        pass
+
+
+class State:
+    """模拟 HA 的 TemplateState(继承 core.State)。"""
+
+    def __init__(self, entity_id, state, last_updated, last_reported=None):
+        self.entity_id = entity_id
+        self.state = state
+        self.last_updated = last_updated
+        if last_reported is not None:
+            self.last_reported = last_reported
+
+    def __eq__(self, other):
+        return isinstance(other, str) and self.state == other
+
+    def __hash__(self):
+        return hash(self.entity_id)
+
+    def __str__(self):
+        return self.state
+
+    def __bool__(self):
+        return True
+
+
+class DomainStates:
+    def __init__(self, mapping, domain):
+        self._m = mapping
+        self._d = domain
+
+    def __getattr__(self, name):
+        # HA:_get_state_if_valid() —— 实体不存在返回 None
+        return self._m.get(f"{self._d}.{name}")
+
+    def __getitem__(self, name):
+        return self.__getattr__(name)
+
+
+class States:
+    def __init__(self, mapping):
+        self._m = mapping
+
+    def __getattr__(self, name):
+        if "." in name:
+            return self._m.get(name)
+        return DomainStates(self._m, name)
+
+    def __getitem__(self, name):
+        return self.__getattr__(name)
+
+
+def parse_datetime(value):
+    if not isinstance(value, str):
+        return None
+    try:
+        return dt.datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def as_timestamp(value, default=jinja2.Undefined):
+    """对齐 helpers/template/extensions/datetime.py 的 as_timestamp。"""
+    try:
+        if isinstance(value, dt.datetime):
+            parsed = value
+        else:
+            parsed = parse_datetime(str(value))
+        if parsed is None:
+            raise ValueError("not a valid date/time.")
+        return parsed.timestamp()
+    except (TypeError, ValueError):
+        if default is jinja2.Undefined:
+            raise jinja2.TemplateError(
+                f"Template error: as_timestamp got invalid input {value!r}"
+            ) from None
+        return default
+
+
+def now():
+    return dt.datetime.now(dt.timezone.utc)
+
+
+def make_env():
+    env = jinja2.Environment(
+        undefined=LoggingUndefined,
+        extensions=["jinja2.ext.loopcontrols", "jinja2.ext.do"],
+    )
+    env.globals.update({"as_timestamp": as_timestamp, "now": now})
+    return env
+
+
+def result_as_boolean(result):
+    """对齐 helpers/template/helpers.py 的 result_as_boolean。"""
+    if result is None:
+        return False
+    if isinstance(result, bool):
+        return result
+    if isinstance(result, str):
+        return result.strip().lower() in ("1", "true", "yes", "on", "enable", "enabled")
+    return bool(result)
+
+
+def render_raw(tpl_text, mapping):
+    env = make_env()
+    env.globals["states"] = States(mapping)
+    return env.from_string(tpl_text).render()
+
+
+def to_ha_state(platform, raw):
+    """把渲染结果变成 HA 里实体真正会显示的状态值。"""
+    out = raw.strip()  # HA: helpers/template/__init__.py:494
+    if platform == "binary_sensor":
+        return "on" if result_as_boolean(out) else "off"
+    return out
+
+
+def scenarios():
+    n = dt.datetime.now(dt.timezone.utc)
+    fresh = n - dt.timedelta(seconds=10)
+    stale = n - dt.timedelta(seconds=600)
+    return [
+        ("实体不存在(名字写错/集成没加载)", {}),
+        ("门关着,刚上报(10 秒前)", {ENTITY: State(ENTITY, "off", fresh, fresh)}),
+        ("门关着,已失联(600 秒前)", {ENTITY: State(ENTITY, "off", stale, stale)}),
+        ("实体 unavailable,刚上报", {ENTITY: State(ENTITY, "unavailable", fresh, fresh)}),
+        ("门开着,刚上报", {ENTITY: State(ENTITY, "on", fresh, fresh)}),
+        ("旧版 HA:没有 last_reported", {ENTITY: State(ENTITY, "off", fresh)}),
+    ]
+
+
+def main():
+    if not JSON_PATH.exists():
+        print("❌ 找不到 tools/.ha-templates.json,先跑: node tools/dump-ha-templates.mjs")
+        return 1
+    templates = json.loads(JSON_PATH.read_text(encoding="utf8"))
+    if not templates:
+        print("❌ 没有解析出任何模板")
+        return 1
+
+    failures = 0
+    print("=" * 76)
+    for tpl in templates:
+        platform = tpl["platform"]
+        print(f"模板 {tpl['unique_id']}   [platform={platform}]")
+        print("-" * 76)
+        for label, mapping in scenarios():
+            try:
+                raw = render_raw(tpl["state"], mapping)
+                state = to_ha_state(platform, raw)
+                print(f"  {label:<36} → {state!r}")
+                if platform == "binary_sensor" and state not in ("on", "off"):
+                    print("       ✗ binary_sensor 的状态只能是 on/off")
+                    failures += 1
+                if platform == "sensor" and state not in ("OPEN", "CLOSED", "UNKNOWN"):
+                    print("       ✗ 状态值必须是 OPEN/CLOSED/UNKNOWN 之一")
+                    failures += 1
+            except Exception as exc:  # noqa: BLE001
+                # HA:模板抛 TemplateError → 实体变成 unavailable
+                print(f"  {label:<36} → ✗ {type(exc).__name__}: {exc}")
+                print("       ✗ HA 里这个实体会变成 unavailable")
+                failures += 1
+        print("")
+
+    print("=" * 76)
+    if failures:
+        print(f"❌ {failures} 处问题")
+    else:
+        print("✅ 所有模板在所有场景下都渲染正常,不会变成 unavailable")
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

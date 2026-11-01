@@ -924,13 +924,17 @@ actions:
     target:
       entity_id:
         - sensor.doorwatch_it_office_door_state
-        - sensor.doorwatch_it_office_door_readable
+        - binary_sensor.doorwatch_it_office_door_readable
   - if:
       - condition: template
         value_template: >
-          {{ states('sensor.doorwatch_it_office_door_readable') == 'on'
-             and (as_timestamp(now())
-                  - as_timestamp(states('sensor.doorwatch_it_office_door_readable').last_updated)) < 120 }}
+          {% set r = states.binary_sensor.doorwatch_it_office_door_readable %}
+          {% set ts = r.last_reported | default(r.last_updated, true) %}
+          {% set ok = false %}
+          {% if r is not none and r.state == 'on' and ts is defined and ts is not none %}
+            {% set ok = (as_timestamp(now()) - as_timestamp(ts)) < 120 %}
+          {% endif %}
+          {{ ok }}
     then:
       - action: mqtt.publish
         data:

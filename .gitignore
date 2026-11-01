@@ -17,3 +17,6 @@ esphome/.piolibdeps/
 test/artifacts/*
 !test/artifacts/dashboard-mobile-normal.png
 !test/artifacts/dashboard-desktop.png
+
+# 模板仿真器生成的中间文件(由 tools/dump-ha-templates.mjs 产出)
+tools/.ha-templates.json
