@@ -112,7 +112,45 @@ HA → **设置 → 集成 → 添加集成 → MQTT**,填:
 | HA 安装方式 | 怎么放 |
 |---|---|
 | HA OS / Supervised | 装 **File Editor** 插件 → 打开 `/config` → 新建 `templates.yaml`、`automations.yaml`,内容从本仓库 `ha/` 目录复制过去 |
-| Container / Core | 把 `ha/templates.yaml`、`ha/automations.yaml` 挂载到 `/config/` 下 |
+| Container / Core | 挂载到 HA 容器的 `/config/` 下,**见下面的完整写法** |
+
+#### HA 跑在 Docker 里的话,挂载这样写
+
+⚠️ **挂载目标必须写完整的文件路径,不能只写 `/config`。**
+只写 `/config` 会报这个错:
+
+```
+not a directory: Are you trying to mount a directory onto a file (or vice-versa)?
+```
+
+原因是 `/config` 在镜像里已经是个目录,把文件挂到目录上,类型对不上。
+
+在 **HA 的** compose 文件里(不是 doorwatch 的)加:
+
+```yaml
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    volumes:
+      - ./config:/config            # HA 自己的配置目录(通常已有这行)
+      - ../ha/templates.yaml:/config/templates.yaml:ro      # ← 注意是文件路径
+      - ../ha/automations.yaml:/config/automations.yaml:ro  # ← 注意是文件路径
+```
+
+路径按你实际的目录结构调整(上面假设 compose 文件在 `doorwatch/deploy/`、HA 文件在 `doorwatch/ha/`)。
+
+挂完进容器确认一下:
+
+```bash
+docker compose exec homeassistant ls -l /config/templates.yaml /config/automations.yaml
+```
+
+#### ⚠️ doorwatch 容器不需要这两个文件
+
+`ha/*.yaml` 是给 **Home Assistant** 用的,doorwatch 服务端一行都不读它
+(它只读 `config/doors.json`)。把这两个文件挂进 doorwatch 容器没有任何意义。
+
+判断你挂错没有:报错里那个容器如果是 `doorwatch`,**把那两行 volumes 删掉**,
+只保留 `doorwatch-data:/data`。
 
 ### 3.2 在 `configuration.yaml` 顶层加两行
 
@@ -120,6 +158,10 @@ HA → **设置 → 集成 → 添加集成 → MQTT**,填:
 template: !include templates.yaml
 automation: !include automations.yaml
 ```
+
+⚠️ **光把文件放进去不够**,还得改 `configuration.yaml` 加这两行,否则 HA 根本不会加载它们。
+改完 `configuration.yaml` 要**重启 HA**;只改 `automations.yaml` 的话在「自动化」页面
+点右上角 ⋮ → 「重新加载」就行。
 
 ### 3.3 改 `templates.yaml` 里的实体名
 

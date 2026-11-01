@@ -251,6 +251,29 @@ automation: !include automations.yaml
 
 把 `ha/` 下的 `templates.yaml`、`automations.yaml` 复制到 HA 的 config 目录。
 
+#### HA 跑在 Docker 里?挂载要写完整的文件路径
+
+```yaml
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    volumes:
+      - ./config:/config                              # HA 自己的配置目录
+      - ../ha/templates.yaml:/config/templates.yaml:ro    # ← 文件路径,不是目录
+      - ../ha/automations.yaml:/config/automations.yaml:ro
+```
+
+⚠️ **写成 `- ../ha/templates.yaml:/config` 会报这个错**:
+
+```
+not a directory: Are you trying to mount a directory onto a file (or vice-versa)?
+```
+
+因为 `/config` 在镜像里本来就是目录,把文件挂到目录上,类型对不上。
+
+⚠️ **别挂到 doorwatch 容器上** —— `ha/*.yaml` 是给 HA 用的,
+doorwatch 服务端一行都不读(它只读 `config/doors.json`)。
+doorwatch 容器只该挂 `doorwatch-data:/data`。
+
 然后:
 
 1. 改 `templates.yaml` 里的实体名 → 你的实际实体
