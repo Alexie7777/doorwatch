@@ -383,6 +383,48 @@ environment:
 
 ## 正式部署
 
+### 方式零:从 GitHub 拉下来直接跑(最快)
+
+服务器上要装 Docker + Docker Compose(v20.10+ / v2 都可以)。
+
+```bash
+git clone https://github.com/Alexie7777/doorwatch.git
+cd doorwatch/deploy
+
+# 按需改环境变量(见下面「配置项」)
+cat > .env <<'EOF'
+CERT_NAMES=192.168.1.50
+EOF
+
+docker compose up -d --build
+docker compose logs -f doorwatch
+```
+
+日志里出现这几行就算起来了:
+
+```
+[doorwatch] 已登记 3 扇门: IT 办公室、机房、IT 备件间
+[mqtt] 内置 broker 已启动: 0.0.0.0:1883
+[doorwatch] 看板已启动,端口 8443
+```
+
+验证:
+
+```bash
+curl -k https://127.0.0.1:8443/api/health
+# {"ok":true,"version":"1.0.0","doors":3,...}
+```
+
+> 容器里的构建上下文是仓库根目录,但 `.dockerignore` 已经把 `node_modules/`、
+> `data/`、`test/`、`docs/` 这些都排除了 —— 构建上下文只有几百 KB,不会卡在
+> 上传 `node_modules` 上。镜像里只装了 `aedes` + `mqtt` 两个运行时依赖。
+
+改完代码要生效:
+
+```bash
+cd doorwatch && git pull && cd deploy && docker compose up -d --build
+```
+
 ### 方式一:Docker(推荐)
 
 ```bash
@@ -400,9 +442,11 @@ docker compose up -d
 
 ```bash
 cd doorwatch
-npm install
-DATA_DIR=/var/lib/doorwatch HTTPS=true node server/src/index.js
+npm ci                                  # 按 package-lock.json 装,别用 npm install
+DATA_DIR=/var/lib/doorwatch HTTPS=true node --disable-warning=ExperimentalWarning server/src/index.js
 ```
+
+需要 Node.js ≥ 22.5(用到内置的 `node:sqlite`,免原生编译)。
 
 ### 方式三:接到学校已有的 MQTT broker
 
