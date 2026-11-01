@@ -177,7 +177,7 @@ shell_command:
     wget -O - https://get.hacs.vip | DOMAIN=xiaomi_miot bash -
 ```
 
-重启 HA → 开发者工具 → 动作 → 调用 `shell_command.update_xiaomi_miot`
+重启 HA → 设置 → 工具 → 动作 → 调用 `shell_command.update_xiaomi_miot`
 → **再重启一次 HA**。
 
 ### 方式 D:手动拷贝(完全离线也行)
@@ -200,7 +200,7 @@ git clone https://github.com/al-one/hass-xiaomi-miot.git xiaomi_miot
 装好集成后,门磁会出现几个 `binary_sensor`。**不要用 `motion` 那个**(那是靠近检测,
 不是开合)。要的是开合那个。
 
-最快的方法:开发者工具 → 状态,搜 `binary_sensor`,然后在米家 App 里开合门,
+最快的方法:设置 → 工具 → 状态,搜 `binary_sensor`,然后在米家 App 里开合门,
 看哪个实体的值跟着变。
 
 ### 用探针脚本一次问清楚(推荐)
@@ -251,6 +251,30 @@ automation: !include automations.yaml
 
 把 `ha/` 下的 `templates.yaml`、`automations.yaml` 复制到 HA 的 config 目录。
 
+> 📌 **HA 2026 改了位置,侧边栏里找不到「开发者工具」不是你的错觉**:
+>
+> - **2026.2** —— 开发者工具从侧边栏挪进了「设置」
+> - **2026.8** —— 正式改名为 **「工具」/ Tools**,地址 `/config/tools`
+>
+> 所以 2026.2 之后的版本侧边栏里**已经没有**这一项了。
+> 直接开 `http://<你的HA>:8123/config/tools` 就能进;
+> 老地址 `/developer-tools` 会自动 302 跳到新地址。
+>
+> 里面对应的页面(老名字 → 新地址):
+>
+> | 老标签页 | 新地址 |
+> |---|---|
+> | 状态 | `/config/tools/state` |
+> | 模板 | `/config/tools/template` |
+> | 动作 | `/config/tools/action` |
+> | 事件 | `/config/tools/event` |
+> | **YAML(检查配置 / 重载)** | **`/config/tools/yaml_configuration`** |
+> | 调试 / 调试控制台 | `/config/tools/debug`、`/config/tools/debug_console` |
+> | 统计 / 动作历史 | `/config/tools/statistics`、`/config/tools/action_history` |
+>
+> ⚠️ 这一块是**仅管理员可见**(`adminOnly`)。侧边栏里连「工具」都没有的话,
+> 说明账号不是 admin 角色 → 设置 → 人员 → 把账号角色改成「管理员」。
+
 #### ⚠️ 两个 YAML 都必须是「裸列表」
 
 `!include` 是把文件内容**直接塞到 `template:` / `automation:` 这个键的位置上**。
@@ -298,7 +322,7 @@ doorwatch 容器只该挂 `doorwatch-data:/data`。
 
 1. 改 `templates.yaml` 里的实体名 → 你的实际实体
 2. 改 `automations.yaml` 里的主题后缀 → 你的 deviceId(见下一节)
-3. **开发者工具 → YAML → 检查配置**,绿勾再重载
+3. **设置 → 工具 → 配置(YAML)→ 检查配置**,绿勾再重载
 
 > ★ **只需要改 `templates.yaml` 一个文件里的实体名**(本仓库已填好,一般不用动)。
 > `automations.yaml` 里出现的 `sensor.doorwatch_it_office_door_state` /
@@ -379,7 +403,7 @@ states.binary_sensor.x.last_reported       # ✅ 时间戳要这么写
 
 > 老版本 HA 没有 `last_reported`(2025 年年中才加的),模板会自动回退到
 > `last_updated` —— 这时会出现上面说的「一直未知」。升级 HA 即可。
-> 在「开发者工具 → 模板」里跑 `{{ states.binary_sensor.你的门磁.last_reported }}`
+> 在「设置 → 工具 → 模板」里跑 `{{ states.binary_sensor.你的门磁.last_reported }}`
 > 报错,就说明你的 HA 需要升级。
 
 > 官方 `Xiaomi Home` 集成没有这个问题 —— 它订阅的是小米云 MQTT Broker,
@@ -438,7 +462,7 @@ xiaomi_miot:
 然后把 `templates.yaml` 里的 `STALE_SECONDS` 保持在 180(约 6 次轮询的余量)。
 调小轮询间隔会加快状态更新,但也会增加小米云的压力 —— **不建议低于 15 秒**。
 
-改完配置不用重启 HA:开发者工具 → YAML → 配置重载 → 搜 `Xiaomi Miot` → 重载。
+改完配置不用重启 HA:设置 → 工具 → 配置(YAML)→ 配置重载 → 搜 `Xiaomi Miot` → 重载。
 
 ---
 

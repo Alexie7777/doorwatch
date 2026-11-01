@@ -61,7 +61,7 @@
 #    ★ 老版本 HA 没有 last_reported(2025 年年中才加的),
 #      模板会自动回退到 last_updated。
 #      回退后如果看板一直显示"未知",说明你的 HA 太老,升级即可。
-#      可以在「开发者工具 → 模板」里跑这一行验证:
+#      可以在「设置 → 工具 → 模板」里跑这一行验证:
 #          {{ states.binary_sensor.你的门磁.last_reported }}
 #      报错就说明 HA 没有 last_reported。
 #

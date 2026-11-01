@@ -67,7 +67,7 @@ HA: http://homeassistant.local:8123
 
 ### 手动找
 
-HA → **开发者工具 → 状态**,搜 `door` / `magnet` / `contact` / `门`。
+HA → **设置 → 工具 → 状态**,搜 `door` / `magnet` / `contact` / `门`。
 记下 `entity_id`(比如 `binary_sensor.isa_dw2hl_b95b_magnet_sensor`)。
 
 ### 验方向
@@ -204,13 +204,21 @@ template:
 
 ### 3.4 检查并重载
 
-- **开发者工具 → YAML → 检查配置**,绿了再往下走。有红叉先别重载。
+> 📌 **HA 2026 的位置变化**:「开发者工具」在 **2026.2** 被挪进「设置」,
+> **2026.8** 改名为 **「工具」/ Tools**,地址 `/config/tools`。
+> 2026.2 之后的版本**侧边栏里已经没有这一项**了 —— 不是你的错觉。
+> 直接开 `http://<你的HA>:8123/config/tools` 即可,
+> 老地址 `/developer-tools` 会自动跳转。
+> 这一块**仅管理员可见**;侧边栏里连「工具」都没有的话,
+> 去 设置 → 人员 把账号角色改成「管理员」。
+
+- **设置 → 工具 → 配置(YAML)→ 检查配置**,绿了再往下走。有红叉先别重载。
 - 改了 `configuration.yaml` → 需要**重启 HA**。
 - 只改了 `automations.yaml` → **自动化 → 右上角 ⋮ → 重新加载**就行,不用重启。
 
 ### 3.5 确认模板活了
 
-**开发者工具 → 状态**,搜 `doorwatch_it_office`:
+**设置 → 工具 → 状态**,搜 `doorwatch_it_office`:
 
 - `sensor.doorwatch_it_office_door_state` 应该是 `OPEN` / `CLOSED` / `UNKNOWN`
 - `sensor.doorwatch_it_office_door_readable` 应该是 `on`(能读到)/ `off`(读不到)
@@ -311,9 +319,9 @@ docker compose logs -f doorwatch
 
 | 现象 | 多半是 | 怎么查 |
 |---|---|---|
-| 看板一直是「状态未知」 | 模板实体没建起来 | HA 开发者工具 → 状态 搜 `doorwatch_it_office` |
+| 看板一直是「状态未知」 | 模板实体没建起来 | HA 设置 → 工具 → 状态 搜 `doorwatch_it_office` |
 | 看板一直是「状态未知」 | 实体名写错了 | `node tools/ha-probe.mjs` 看真实 entity_id |
-| 看板一直是「状态未知」 | HA 版本太老,没有 `last_reported` | 开发者工具 → 模板,跑 `{{ states.binary_sensor.你的门磁.last_reported }}`,报错就是太老,升级 HA |
+| 看板一直是「状态未知」 | HA 版本太老,没有 `last_reported` | 设置 → 工具 → 模板,跑 `{{ states.binary_sensor.你的门磁.last_reported }}`,报错就是太老,升级 HA |
 | 看板不动,但 HA 里状态对 | MQTT 没通 | HA → 集成 → MQTT → 配置,看 broker 地址;服务端日志里看有没有「传感器接入」 |
 | 服务端日志刷「收到未登记设备」 | deviceId 对不上 | 比对 `config/doors.json` 和 `automations.yaml` 里的主题后缀 |
 | 状态反了(开门显示关) | 方向开关 | `templates.yaml` 里 `DOOR_ON_MEANS_OPEN` 改 `false` |

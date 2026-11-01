@@ -857,7 +857,7 @@ node tools/check-ports.mjs --kill   # 确认是自己上次的残留后再清
 | **HACS** | HACS → 集成 → ➕ → 搜 `Xiaomi Miot Auto` → 下载 → 重启 HA | 网络通畅时最省事 |
 | **SSH 一键装** | `wget -O - .../install.sh \| ARCHIVE_TAG=latest bash -` | HA OS / Supervised |
 | **手动拷贝** | 把 `custom_components/xiaomi_miot` 拷进配置目录 | 任何环境 |
-| **shell_command** | 写进 `configuration.yaml`,开发者工具里调用 | HA OS 上不想开 SSH |
+| **shell_command** | 写进 `configuration.yaml`,在「设置 → 工具 → 动作」里调用 | HA OS 上不想开 SSH |
 
 > ★ **只要这一个集成的话,别装 HACS** —— HACS 要绑 GitHub 账号、要过 GitHub 网络,
 > 以后还得管更新。直接用上面的 **SSH 一键装**或 **shell_command**,一条命令到位。
