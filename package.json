@@ -12,16 +12,18 @@
     "sim": "node tools/simulate.mjs",
     "sim:ha": "node tools/simulate.mjs --mode ha",
     "probe:ha": "node tools/ha-probe.mjs",
+    "doctor": "node tools/doctor.mjs",
     "check": "node tools/check-config.mjs && node tools/check-page.mjs docs/architecture.html",
     "check:ports": "node tools/check-ports.mjs",
     "check:ha-templates": "node tools/dump-ha-templates.mjs && python tools/ha-template-sim.py",
     "shoot": "node tools/shoot.mjs",
-    "test": "node --disable-warning=ExperimentalWarning test/ha-config.mjs && node --disable-warning=ExperimentalWarning test/ha-probe.mjs && node --disable-warning=ExperimentalWarning test/freshness.mjs && node --disable-warning=ExperimentalWarning test/smoke.mjs && node --disable-warning=ExperimentalWarning test/ha-path.mjs && node --disable-warning=ExperimentalWarning test/ui.mjs",
+    "test": "node --disable-warning=ExperimentalWarning test/ha-config.mjs && node --disable-warning=ExperimentalWarning test/ha-probe.mjs && node --disable-warning=ExperimentalWarning test/freshness.mjs && node --disable-warning=ExperimentalWarning test/smoke.mjs && node --disable-warning=ExperimentalWarning test/ha-path.mjs && node --disable-warning=ExperimentalWarning test/doctor.mjs && node --disable-warning=ExperimentalWarning test/ui.mjs",
     "test:smoke": "node --disable-warning=ExperimentalWarning test/smoke.mjs",
     "test:ha": "node --disable-warning=ExperimentalWarning test/ha-path.mjs",
     "test:ui": "node --disable-warning=ExperimentalWarning test/ui.mjs",
     "test:freshness": "node --disable-warning=ExperimentalWarning test/freshness.mjs",
-    "test:ha-config": "node --disable-warning=ExperimentalWarning test/ha-config.mjs"
+    "test:ha-config": "node --disable-warning=ExperimentalWarning test/ha-config.mjs",
+    "test:doctor": "node --disable-warning=ExperimentalWarning test/doctor.mjs"
   },
   "engines": {
     "node": ">=22.5.0"

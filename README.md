@@ -132,28 +132,49 @@ docker compose exec doorwatch cat /data/ADMIN_KEY.txt
 想让别人手机上不弹「不安全」,就用学校内网 CA 签发的证书
 (`CERT_FILE` / `KEY_FILE`,见[证书](#证书))。这是唯一需要额外一步的地方。
 
-### 7. 确认一切正常
+### 7. 确认一切正常 —— 一条命令体检整条链路
+
+链路有 5 环(HTTP 服务端 → MQTT → 看板 → HA 模板 → deviceId 对齐),
+断在哪一环现象都是「看板一直显示未知」。用这个工具一次查完,直接告诉你断在哪:
 
 ```bash
-cd doorwatch/deploy
-docker compose logs -f doorwatch
+node tools/doctor.mjs --doorwatch https://<你的服务器>:8443 --insecure
 ```
 
-看到这几行就对了:
+把 HA 也拉进来一起查(可选,需要 HA 长期访问令牌):
 
-```
-[doorwatch] 已登记 3 扇门: IT 办公室、机房、IT 备件间
-[mqtt] 内置 broker 已启动: 0.0.0.0:1883
-[doorwatch] 看板已启动,端口 8443
-```
-
-接上传感器之后,日志里还会出现:
-
-```
-[mqtt] 传感器接入: it-office-door        ← 传感器连上了
+```bash
+node tools/doctor.mjs --doorwatch https://<你的服务器>:8443 --insecure \
+  --ha http://10.37.2.208:8123 --token <TOKEN>
 ```
 
-再确认一次:
+输出长这样:
+
+```
+[1/5] doorwatch 服务端
+  ✅ 服务可达  https://it-server-bak:8443
+  ✅ 版本 1.0.0,已运行 42 分钟
+  ✅ MQTT broker:内置,端口 1883  当前 2 个客户端连着
+
+[2/5] 看板上的门
+  ✅ 登记了 3 扇门
+  ✅ IT 办公室门  状态=门开着  在线=是  最后收到 8 秒前
+
+[3/5] HA 侧模板实体
+  ✅ 门状态模板 = OPEN
+  ✅ 可读性模板 = on  (传感器在正常上报)
+  · 原始门磁实体 = off  last_reported 12 秒前
+
+[4/5] 主题与 deviceId 对齐
+  ✅ doorwatch 登记的 deviceId: it-office-door, server-room-door, it-store-door
+  ✅ 自动化发布用的 deviceId: it-office-door
+  ✅ 两边对得上
+
+[5/5] 结论
+  ✅ 链路已通 —— 门开着的话,看板会显示「门开着」。
+```
+
+不想用工具的话,手动确认也行:
 
 ```bash
 curl -k https://127.0.0.1:8443/api/health
@@ -170,6 +191,8 @@ curl -k https://127.0.0.1:8443/api/health
 | 更新代码 | `cd .. && git pull && cd deploy && docker compose up -d --build` |
 | 备份数据(SQLite + 证书) | `docker run --rm -v doorwatch_deploy_doorwatch-data:/data -v $(pwd):/out alpine tar czf /out/doorwatch-backup.tgz -C /data .` |
 | 端口被占 | `node tools/check-ports.mjs` |
+| 体检整条链路(看板不更新时先跑这个) | `node tools/doctor.mjs --doorwatch https://<服务器>:8443 --insecure` |
+| 查 HA 门磁实体与时间戳 | `node tools/ha-probe.mjs --host http://<HA>:8123 --token <TOKEN>` |
 
 ---
 
@@ -833,6 +856,39 @@ node tools/check-ports.mjs --kill   # 确认是自己上次的残留后再清
 > 依据:小米官网 [Mi Door and Window Sensor 2 FAQ](https://www.mi.com/hk/support/faq/details/KA-05476/)
 > 明确写着「小米门窗感应器 2 需搭配蓝牙网关,小米门窗感应器需搭配 Zigbee 网关」。
 
+### ★ 网关型号决定了你能不能「本地化」
+
+评估过「不用 HA,自己写个网关登录米家取状态」这条路,结论按网关型号分两种:
+
+| 网关型号 | 能不能脱离米家云 |
+|---|---|
+| **小米中枢网关**(带屏那台,大陆才有) | **能**。中枢网关内置标准 MQTT Broker,设备属性一变就把消息推给局域网内的订阅者 —— 不登录米家、不轮询、秒级 |
+| **普通蓝牙网关 / 蓝牙 Mesh 网关**(无屏小盒子) | **不能**。它只把数据转发到米家云,本地没有 Broker,只能走云 |
+
+你现在用的是**普通蓝牙网关**,所以本地这条路是关的。
+
+### ★ 为什么没选「自研网关直连米家云」
+
+三条硬理由,都不是「懒得写」:
+
+1. **BLE 门磁没有本地直连**,它本来就是靠小米网关中转到云再读回来的。
+   自研网关和 HA 依赖的是**同一个小米网关** —— 网关掉线两边都是瞎的,
+   单点故障一点没减少,只是把成熟的实现换成了自己维护的。
+2. **延迟优势 ≈ 0**。`xiaomi_miot` 默认就是 60 秒轮询,自己写也是轮询;
+   而米家云对属性读取的限流是**每分钟 30–60 次**(社区实测区间),单设备
+   60 秒一次已经接近单账号的合理用量。对「出门前看一眼门开没开」这个用途,
+   60 秒延迟本来就不重要。
+3. **成本在登录态,不在读状态**。要维护**账号登录态、32 位 Device Token、
+   OAuth access_token 三套独立凭证**,任一失效整条链就断;OAuth 刷新每小时
+   只有 5–10 次额度,超了触发风控要重新登录。
+   而且 Node 这条路的 SDK 已经停更多年(`miio`/`mihomeJS` 多年未发版,
+   issue 堆满「无法登录」「token 失效」,在 Node 20+ 上还会直接报
+   TLS/fetch 不兼容),能用的实现都在 Python 的 `python-miio` 一侧 ——
+   那等于给纯 Node 的 doorwatch 再加一层 Python 运行时。
+
+一句话:**HA 在这条路上已经是成本最低、最不容易坏的那个方案**。
+真要再省一层,唯一划算的方向是换硬件 —— 见上面「复用现有门禁门磁」一节。
+
 ### ★ 再确认用哪个集成
 
 | 集成 | 支持 BLE 门磁? | 支持 Zigbee 门磁? |
@@ -1115,13 +1171,18 @@ doorwatch/
 ├── deploy/              # Dockerfile / docker-compose.yml
 ├── tools/
 │   ├── demo.mjs         #   一键演示
+│   ├── doctor.mjs       #   ★ 链路体检:一条命令查完 5 环,告诉你断在哪
 │   ├── ha-probe.mjs     #   HA 探针:找门磁实体 / 验方向 / 看时间戳
+│   ├── dump-ha-templates.mjs  # 把 HA 真正读到的模板字符串导出成 JSON
+│   ├── ha-template-sim.py    # ★ 离线复刻 HA 的 Jinja 语义,不用装 HA 就能验模板
 │   ├── check-ports.mjs  #   端口占用检查(部署前先跑)
 │   └── simulate.mjs     #   传感器模拟器
 ├── test/
 │   ├── freshness.mjs    #   「不许撒谎」的不变量单元测试
 │   ├── smoke.mjs        #   端到端测试
 │   ├── ha-path.mjs      #   HA 接入路径的端到端测试
+│   ├── ha-config.mjs    #   HA 接入套件的静态体检(照抄 HA 官方 schema)
+│   ├── doctor.mjs       #   体检工具的端到端测试
 │   └── ui.mjs           #   浏览器 UI 测试(CDP)
 └── config/doors.json    # 门禁登记表
 ```

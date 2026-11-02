@@ -1,0 +1,276 @@
+#!/usr/bin/env node
+/**
+ * doorwatch 链路体检 —— 一条命令回答「现在能不能看到真实门态」。
+ *
+ * 为什么需要它:
+ *   整条链路有 5 环 ——
+ *     ① HA 模板实体  ② HA 自动化  ③ MQTT  ④ doorwatch 服务端  ⑤ 手机看板
+ *   断在哪一环,现象都是同一个:看板一直显示「状态未知」。
+ *   靠猜很浪费时间,这个脚本把每一环都查一遍,并明确告诉你断在哪。
+ *
+ * 只读,不写任何东西。
+ *
+ * 用法:
+ *   node tools/doctor.mjs --doorwatch https://it-server-bak:8443
+ *   node tools/doctor.mjs --doorwatch https://it-server-bak:8443 --insecure
+ *   node tools/doctor.mjs --doorwatch https://it-server-bak:8443 \
+ *        --ha http://10.37.2.208:8123 --token <TOKEN>
+ *
+ * 环境变量也可以:DOORWATCH_URL / HA_URL / HA_TOKEN
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+import http from 'node:http';
+import https from 'node:https';
+import process from 'node:process';
+
+const ROOT = path.resolve(import.meta.dirname, '..');
+
+const MARK = { ok: '✅', bad: '❌', warn: '⚠️', info: '·' };
+
+let problems = 0;
+
+function parseArgs(argv) {
+  const out = {};
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--doorwatch') out.doorwatch = argv[++i];
+    else if (a === '--ha') out.ha = argv[++i];
+    else if (a === '--token') out.token = argv[++i];
+    else if (a === '--insecure') out.insecure = true;
+    else if (a === '--help' || a === '-h') out.help = true;
+  }
+  out.doorwatch = (out.doorwatch || process.env.DOORWATCH_URL || 'http://127.0.0.1:8443')
+    .replace(/\/+$/, '');
+  out.ha = (out.ha || process.env.HA_URL || '').replace(/\/+$/, '');
+  out.token = out.token || process.env.HA_TOKEN || '';
+  return out;
+}
+
+const args = parseArgs(process.argv.slice(2));
+
+if (args.help) {
+  console.log(`
+用法: node tools/doctor.mjs [选项]
+
+  --doorwatch <url>   doorwatch 地址(默认 http://127.0.0.1:8443,可用 DOORWATCH_URL)
+  --ha <url>          Home Assistant 地址(可选,可用 HA_URL)
+  --token <tok>       HA 长期访问令牌(可选,可用 HA_TOKEN)
+  --insecure          跳过 TLS 证书校验(自签证书用)
+`);
+  process.exit(0);
+}
+
+/* ------------------------------------------------------------------ *
+ * HTTP:用 node:http/https 而不是 fetch,是为了能单独控制 rejectUnauthorized
+ * ------------------------------------------------------------------ */
+function httpGet(url, { headers = {}, insecure = false, timeout = 8000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const lib = u.protocol === 'https:' ? https : http;
+    const req = lib.request(
+      u,
+      { method: 'GET', headers, timeout, rejectUnauthorized: !insecure },
+      (res) => {
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (c) => { body += c; });
+        res.on('end', () => {
+          let json = null;
+          try { json = JSON.parse(body); } catch { /* 不是 JSON,留给调用方处理 */ }
+          resolve({ status: res.statusCode, json, body });
+        });
+      },
+    );
+    req.on('timeout', () => req.destroy(new Error(`超时 ${timeout}ms`)));
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+/** 自签证书:先按正常方式连,报证书错误就自动降级重试一次 */
+async function getJson(url, opts = {}) {
+  let res;
+  try {
+    res = await httpGet(url, opts);
+  } catch (err) {
+    const certIssue = /certificate|self[- ]signed|SSL|TLS/i.test(err?.message ?? '');
+    if (certIssue && !opts.insecure) {
+      const retry = await httpGet(url, { ...opts, insecure: true });
+      retry.selfSigned = true;
+      res = retry;
+    } else {
+      throw err;
+    }
+  }
+  if (res.status < 200 || res.status >= 300) throw new Error(`HTTP ${res.status}`);
+  if (!res.json) throw new Error('返回的不是 JSON');
+  return res.json;
+}
+
+function age(ms) {
+  if (!ms) return '从未';
+  const s = Math.round((Date.now() - ms) / 1000);
+  if (s < 60) return `${s} 秒前`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} 分钟前`;
+  const h = Math.round(m / 60);
+  if (h < 48) return `${h} 小时前`;
+  return `${Math.round(h / 24)} 天前`;
+}
+
+function line(mark, text, extra = '') {
+  console.log(`  ${mark} ${text}${extra ? `  ${extra}` : ''}`);
+  if (mark === MARK.bad) problems += 1;
+}
+
+function section(title) {
+  console.log(`\n${title}`);
+}
+
+/* ================================================================== *
+ * ① doorwatch 服务端
+ * ================================================================== */
+let health = null;
+let doors = [];
+
+section('[1/5] doorwatch 服务端');
+try {
+  health = await getJson(`${args.doorwatch}/api/health`, { insecure: args.insecure });
+  line(MARK.ok, '服务可达', args.doorwatch);
+  const mqtt = health.mqtt ?? {};
+  line(MARK.ok, `版本 ${health.version ?? '?'},已运行 ${Math.floor((health.uptimeSec ?? 0) / 60)} 分钟`);
+  line(
+    mqtt.clients > 0 ? MARK.ok : MARK.warn,
+    `MQTT broker:${mqtt.embedded ? '内置' : '外部'},端口 ${mqtt.brokerPort ?? '?'}`,
+    `当前 ${mqtt.clients ?? 0} 个客户端连着`,
+  );
+  if (!mqtt.clients) {
+    console.log('     ↳ 一个客户端都没有 —— HA 还没连上 MQTT,或者没部署 HA 那套自动化');
+  }
+} catch (err) {
+  line(MARK.bad, '连不上 doorwatch', `${err.message}`);
+  console.log('     ↳ 先把服务端拉起来:');
+  console.log('       cd /srv/doorwatch && docker compose -f deploy/docker-compose.yml up -d');
+  console.log('       docker compose -f deploy/docker-compose.yml logs -f doorwatch');
+}
+
+/* ================================================================== *
+ * ② 看板上的门
+ * ================================================================== */
+section('[2/5] 看板上的门');
+if (health) {
+  try {
+    const snap = await getJson(`${args.doorwatch}/api/doors`, { insecure: args.insecure });
+    doors = snap.doors ?? [];
+    line(MARK.ok, `登记了 ${doors.length} 扇门`);
+    let onlineCount = 0;
+    for (const d of doors) {
+      const stateZh = { open: '门开着', closed: '门关着', unknown: '状态未知' }[d.state] ?? d.state;
+      const ok = d.online && d.state !== 'unknown';
+      if (ok) onlineCount += 1;
+      line(
+        ok ? MARK.ok : MARK.warn,
+        `${d.name ?? d.id}`,
+        `状态=${stateZh}  在线=${d.online ? '是' : '否'}  最后收到 ${age(d.lastSeenAt)}`,
+      );
+    }
+    if (doors.length && !onlineCount) {
+      console.log('     ↳ 没有一扇门是「在线且有明确开/关」—— 数据没从 HA 流过来');
+    }
+  } catch (err) {
+    line(MARK.bad, '读 /api/doors 失败', err.message);
+  }
+} else {
+  line(MARK.info, '跳过(服务端连不上)');
+}
+
+/* ================================================================== *
+ * ③ HA 侧模板实体
+ * ================================================================== */
+section('[3/5] HA 侧模板实体');
+if (!args.ha) {
+  line(MARK.info, '跳过(没给 --ha / HA_URL)');
+  console.log('     ↳ 想连 HA 一起查:加 --ha http://<HA>:8123 --token <TOKEN>');
+} else {
+  const haHeaders = { Authorization: `Bearer ${args.token}`, 'Content-Type': 'application/json' };
+  try {
+    const states = await getJson(`${args.ha}/api/states`, { headers: haHeaders, timeout: 10000 });
+    const map = new Map(states.map((s) => [s.entity_id, s]));
+
+    const st = map.get('sensor.doorwatch_it_office_door_state');
+    if (!st) {
+      line(MARK.bad, 'sensor.doorwatch_it_office_door_state 不存在', 'HA 的 templates.yaml 没生效');
+    } else if (!['OPEN', 'CLOSED', 'UNKNOWN'].includes(st.state)) {
+      line(MARK.bad, `门状态模板的值不对: "${st.state}"`, '只能是 OPEN / CLOSED / UNKNOWN');
+    } else if (st.state === 'unavailable') {
+      line(MARK.bad, '门状态模板 = unavailable', '模板渲染抛异常了,去 设置 → 工具 → 调试 看报错');
+    } else {
+      line(MARK.ok, `门状态模板 = ${st.state}`);
+    }
+
+    const rd = map.get('binary_sensor.doorwatch_it_office_door_readable');
+    if (!rd) {
+      line(MARK.bad, 'binary_sensor.doorwatch_it_office_door_readable 不存在',
+        'templates.yaml 里可读性模板要放在 binary_sensor: 下面');
+    } else if (!['on', 'off'].includes(rd.state)) {
+      line(MARK.bad, `可读性模板的值不对: "${rd.state}"`, 'binary_sensor 只能是 on / off');
+    } else {
+      line(MARK.ok, `可读性模板 = ${rd.state}`, rd.state === 'on' ? '(传感器在正常上报)' : '(读不到传感器)');
+    }
+
+    const raw = map.get('binary_sensor.isa_dw2hl_b95b_magnet_sensor');
+    if (raw) {
+      line(MARK.info, `原始门磁实体 = ${raw.state}`,
+        `last_reported ${age(Date.parse(raw.last_reported ?? ''))}`);
+    }
+  } catch (err) {
+    line(MARK.bad, '连不上 HA', err.message);
+  }
+}
+
+/* ================================================================== *
+ * ④ 主题与 deviceId 对齐(读仓库里的静态配置)
+ * ================================================================== */
+section('[4/5] 主题与 deviceId 对齐');
+try {
+  const doorsJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'config', 'doors.json'), 'utf8'));
+  const registered = new Set((doorsJson.doors ?? []).map((d) => d.deviceId));
+  const automations = fs.readFileSync(path.join(ROOT, 'ha', 'automations.yaml'), 'utf8');
+  const topics = [...new Set([...automations.matchAll(/topic:\s*"doorwatch\/([^/"]+)\//g)].map((m) => m[1]))];
+
+  line(MARK.ok, `doorwatch 登记的 deviceId: ${[...registered].join(', ')}`);
+  line(MARK.ok, `自动化发布用的 deviceId: ${topics.join(', ')}`);
+  const missing = topics.filter((t) => !registered.has(t));
+  if (missing.length) {
+    line(MARK.bad, `这些 deviceId 服务端没登记: ${missing.join(', ')}`, '消息会被直接丢弃');
+  } else {
+    line(MARK.ok, '两边对得上');
+  }
+} catch (err) {
+  line(MARK.warn, '读仓库里的配置失败', err.message);
+}
+
+/* ================================================================== *
+ * ⑤ 结论
+ * ================================================================== */
+section('[5/5] 结论');
+const anyLive = doors.some((d) => d.online && d.state !== 'unknown');
+if (!health) {
+  problems += 1;
+  console.log('  ❌ 服务端没起来 —— 看板当然什么都看不到。');
+} else if (!anyLive) {
+  problems += 1;
+  console.log('  ❌ 服务端活着,但没有一扇门拿到有效状态。顺着这条查:');
+  console.log('     1. HA 里:设置 → 工具 → 配置(YAML)→ 检查配置,确认 templates.yaml 无红叉');
+  console.log('     2. HA 里:设置 → 工具 → 动作,调一次 homeassistant.update_entity');
+  console.log('     3. HA 里:设置 → 自动化,看「每分钟体检」那条在不在、有没有报错');
+  console.log('     4. HA 的 MQTT 集成要指向 doorwatch 的 1883 端口(不是 8123)');
+} else {
+  console.log('  ✅ 链路已通 —— 门开着的话,看板会显示「门开着」。');
+  console.log('     手机上打开看板地址,加到主屏幕就能像 App 一样用。');
+}
+
+if (problems) console.log(`\n  (${problems} 项检查未通过)`);
+console.log('');
+process.exit(problems ? 1 : 0);

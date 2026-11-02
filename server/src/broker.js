@@ -27,6 +27,11 @@ let tlsServer = null;
 let client = null;
 /** 已经提醒过的未登记设备,避免刷屏 */
 const warnedDevices = new Set();
+/**
+ * 当前连在 broker 上的客户端数量(HA、ESPHome 设备都算)。
+ * 排查「HA 到底连上 MQTT 没有」时,这是最直接的证据。
+ */
+let clientCount = 0;
 
 function listen(server, port, host) {
   return new Promise((resolve, reject) => {
@@ -40,7 +45,11 @@ async function startEmbeddedBroker() {
   broker = await Aedes.createBroker();
 
   broker.on('client', (client) => {
-    console.log(`[mqtt] 传感器接入: ${client.id}`);
+    clientCount += 1;
+    console.log(`[mqtt] 传感器接入: ${client.id}(当前 ${clientCount} 个客户端在线)`);
+  });
+  broker.on('clientDisconnect', () => {
+    clientCount = Math.max(0, clientCount - 1);
   });
   broker.on('connectionError', (client, err) => {
     console.warn(`[mqtt] 连接异常: ${err?.message ?? err}`);
@@ -225,6 +234,8 @@ export function brokerStatus() {
     embedded: !config.mqttHost,
     brokerPort: config.mqttHost ? config.mqttPortExternal : config.mqttPort,
     clientConnected: Boolean(client?.connected),
+    /** 当前连在 broker 上的客户端数(HA / ESPHome 设备都算) */
+    clients: clientCount,
     topicPrefix: config.topicPrefix,
   };
 }
