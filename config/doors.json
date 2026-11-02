@@ -3,10 +3,16 @@
     {
       "id": "it-office",
       "name": "IT 办公室",
+      "nameEn": "IT Office",
       "location": "A512",
+      "locationEn": "A512",
       "deviceId": "it-office-door",
       "openHint": "IT 有人在,直接过来就行",
-      "closedHint": "门已关,IT 暂时不在,先别跑一趟"
+      "openHintEn": "Someone from IT is in — just come over",
+      "closedHint": "门已关，IT 暂时不在，可联系值班微信",
+      "closedHintEn": "Door closed, IT is temporarily away. Contact the on-duty WeChat.",
+      "unknownHint": "传感器没上线,状态未知 — 请先联系 IT",
+      "unknownHintEn": "Sensor offline, status unknown — please contact IT"
     }
   ]
 }

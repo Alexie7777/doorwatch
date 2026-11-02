@@ -14,6 +14,17 @@ let db;
 const bool01 = (v) => (v ? 1 : 0);
 
 export function openDb(file = paths.db) {
+  // 允许重复打开(测试要拿老库跑一遍迁移):先把上一个连接关掉,
+  // 否则同一个文件上挂两个句柄,后面 close 会漏。
+  if (db) {
+    try {
+      db.close();
+    } catch {
+      /* ignore */
+    }
+    db = undefined;
+  }
+
   db = new DatabaseSync(file);
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA busy_timeout = 5000;');
@@ -21,10 +32,16 @@ export function openDb(file = paths.db) {
     CREATE TABLE IF NOT EXISTS doors (
       id             TEXT PRIMARY KEY,
       name           TEXT NOT NULL,
+      name_en        TEXT NOT NULL DEFAULT '',
       location       TEXT NOT NULL DEFAULT '',
+      location_en    TEXT NOT NULL DEFAULT '',
       device_id      TEXT NOT NULL UNIQUE,
       open_hint      TEXT NOT NULL DEFAULT '',
+      open_hint_en   TEXT NOT NULL DEFAULT '',
       closed_hint    TEXT NOT NULL DEFAULT '',
+      closed_hint_en TEXT NOT NULL DEFAULT '',
+      unknown_hint     TEXT NOT NULL DEFAULT '',
+      unknown_hint_en  TEXT NOT NULL DEFAULT '',
       -- 运行时状态
       state          TEXT NOT NULL DEFAULT 'unknown',   -- open | closed | unknown
       online         INTEGER NOT NULL DEFAULT 0,
@@ -60,7 +77,17 @@ export function openDb(file = paths.db) {
   //  这里显式查一遍表结构,缺哪列补哪列。幂等,反复跑没副作用。
   // ------------------------------------------------------------------
   const cols = db.prepare('PRAGMA table_info(doors)').all().map((c) => c.name);
-  for (const [name, ddl] of [['battery', 'INTEGER'], ['battery_at', 'INTEGER']]) {
+  for (const [name, ddl] of [
+    ['battery', 'INTEGER'],
+    ['battery_at', 'INTEGER'],
+    // 中英双语文案:老库也得补上,不然 syncRegistry 直接报 "no such column"
+    ['name_en', "TEXT NOT NULL DEFAULT ''"],
+    ['location_en', "TEXT NOT NULL DEFAULT ''"],
+    ['open_hint_en', "TEXT NOT NULL DEFAULT ''"],
+    ['closed_hint_en', "TEXT NOT NULL DEFAULT ''"],
+    ['unknown_hint', "TEXT NOT NULL DEFAULT ''"],
+    ['unknown_hint_en', "TEXT NOT NULL DEFAULT ''"],
+  ]) {
     if (!cols.includes(name)) {
       db.exec(`ALTER TABLE doors ADD COLUMN ${name} ${ddl}`);
       console.log(`[db] 已给 doors 表补上 ${name} 列`);
@@ -95,18 +122,42 @@ export function getDb() {
 export function syncRegistry(doors) {
   const now = Date.now();
   const stmt = getDb().prepare(`
-    INSERT INTO doors (id, name, location, device_id, open_hint, closed_hint, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO doors (
+      id, name, name_en, location, location_en, device_id,
+      open_hint, open_hint_en, closed_hint, closed_hint_en,
+      unknown_hint, unknown_hint_en, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name      = excluded.name,
+      name_en   = excluded.name_en,
       location  = excluded.location,
+      location_en = excluded.location_en,
       device_id = excluded.device_id,
       open_hint = excluded.open_hint,
+      open_hint_en = excluded.open_hint_en,
       closed_hint = excluded.closed_hint,
+      closed_hint_en = excluded.closed_hint_en,
+      unknown_hint = excluded.unknown_hint,
+      unknown_hint_en = excluded.unknown_hint_en,
       updated_at = excluded.updated_at
   `);
   for (const d of doors) {
-    stmt.run(d.id, d.name, d.location, d.deviceId, d.openHint, d.closedHint, now);
+    stmt.run(
+      d.id,
+      d.name,
+      d.nameEn ?? '',
+      d.location,
+      d.locationEn ?? '',
+      d.deviceId,
+      d.openHint,
+      d.openHintEn ?? '',
+      d.closedHint,
+      d.closedHintEn ?? '',
+      d.unknownHint ?? '',
+      d.unknownHintEn ?? '',
+      now,
+    );
   }
 
   if (doors.length > 0) {

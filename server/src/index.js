@@ -121,11 +121,11 @@ function serveStatic(req, res, pathname) {
   // 目录穿越防护
   const target = path.resolve(config.publicDir, `.${rel}`);
   if (!target.startsWith(path.resolve(config.publicDir))) {
-    json(res, 403, { error: '非法路径' });
+    json(res, 403, { error: '非法路径', errorKey: 'bad_path' });
     return;
   }
   if (!fs.existsSync(target) || !fs.statSync(target).isFile()) {
-    json(res, 404, { error: '页面不存在' });
+    json(res, 404, { error: '页面不存在', errorKey: 'page_not_found' });
     return;
   }
   const ext = path.extname(target).toLowerCase();
@@ -185,7 +185,7 @@ async function handleApi(req, res, url) {
   if (resource === 'doors' && id) {
     const door = getDoor(id);
     if (!door) {
-      json(res, 404, { error: '没有这扇门' });
+      json(res, 404, { error: '没有这扇门', errorKey: 'no_such_door' });
       return true;
     }
 
@@ -209,19 +209,19 @@ async function handleApi(req, res, url) {
     // POST /api/doors/:id/state  —— 外部系统推门磁状态(webhook 通道)
     if (sub === 'state' && req.method === 'POST') {
       if (!isAdmin(req, url)) {
-        json(res, 401, { error: '需要管理密钥' });
+        json(res, 401, { error: '需要管理密钥', errorKey: 'need_admin_key' });
         return true;
       }
       let body;
       try {
         body = JSON.parse((await readBody(req)) || '{}');
       } catch {
-        json(res, 400, { error: '请求体不是合法 JSON' });
+        json(res, 400, { error: '请求体不是合法 JSON', errorKey: 'bad_json' });
         return true;
       }
       const state = body.state === 'open' || body.state === 'closed' ? body.state : null;
       if (!state) {
-        json(res, 400, { error: 'state 必须是 open 或 closed' });
+        json(res, 400, { error: 'state 必须是 open 或 closed', errorKey: 'bad_state' });
         return true;
       }
       const { recordState } = await import('./db.js');
@@ -234,19 +234,19 @@ async function handleApi(req, res, url) {
     // POST /api/doors/:id/override  —— 人工置顶(如全员出差,钉死"别来")
     if (sub === 'override' && req.method === 'POST') {
       if (!isAdmin(req, url)) {
-        json(res, 401, { error: '需要管理密钥' });
+        json(res, 401, { error: '需要管理密钥', errorKey: 'need_admin_key' });
         return true;
       }
       let body;
       try {
         body = JSON.parse((await readBody(req)) || '{}');
       } catch {
-        json(res, 400, { error: '请求体不是合法 JSON' });
+        json(res, 400, { error: '请求体不是合法 JSON', errorKey: 'bad_json' });
         return true;
       }
       const state = body.state === 'open' || body.state === 'closed' ? body.state : null;
       if (!state) {
-        json(res, 400, { error: 'state 必须是 open 或 closed' });
+        json(res, 400, { error: 'state 必须是 open 或 closed', errorKey: 'bad_state' });
         return true;
       }
       const hours = Number(body.hours ?? 0);
@@ -260,7 +260,7 @@ async function handleApi(req, res, url) {
     // DELETE /api/doors/:id/override
     if (sub === 'override' && req.method === 'DELETE') {
       if (!isAdmin(req, url)) {
-        json(res, 401, { error: '需要管理密钥' });
+        json(res, 401, { error: '需要管理密钥', errorKey: 'need_admin_key' });
         return true;
       }
       setOverride(door.id, null, null);
@@ -274,7 +274,7 @@ async function handleApi(req, res, url) {
   // 注意这是 3 段路径:解构后 resource='admin'、id='verify'、sub=undefined
   if (resource === 'admin' && id === 'verify' && req.method === 'GET') {
     if (!isAdmin(req, url)) {
-      json(res, 401, { error: '管理密钥不正确' });
+      json(res, 401, { error: '管理密钥不正确', errorKey: 'bad_admin_key' });
       return true;
     }
     json(res, 200, { ok: true });
@@ -349,13 +349,13 @@ async function main() {
     try {
       if (url.pathname.startsWith('/api/')) {
         const handled = await handleApi(req, res, url);
-        if (!handled) json(res, 404, { error: '接口不存在' });
+        if (!handled) json(res, 404, { error: '接口不存在', errorKey: 'api_not_found' });
         return;
       }
       serveStatic(req, res, url.pathname);
     } catch (err) {
       console.error('[http] 处理请求出错:', err);
-      if (!res.headersSent) json(res, 500, { error: '服务器内部错误' });
+      if (!res.headersSent) json(res, 500, { error: '服务器内部错误', errorKey: 'server_error' });
       else res.end();
     }
   };

@@ -7,6 +7,7 @@ data-*/
 
 # 一次性验证脚本(用完即删;留着也不会进仓库)
 tools/.tmp-*.mjs
+tmp-*.mjs
 
 # ESPHome 编译产物与密钥 —— secrets.yaml 绝对不能进仓库
 esphome/secrets.yaml
@@ -20,6 +21,8 @@ esphome/.piolibdeps/
 test/artifacts/*
 !test/artifacts/dashboard-mobile-normal.png
 !test/artifacts/dashboard-desktop.png
+!test/artifacts/dashboard-zh.png
+!test/artifacts/dashboard-en.png
 
 # 模板仿真器生成的中间文件(由 tools/dump-ha-templates.mjs 产出)
 tools/.ha-templates.json

@@ -17,7 +17,8 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { openDb, syncRegistry, getDoorByDevice, recordState, recordUnknown, recordSeen, recordBattery, setOnline } from '../server/src/db.js';
+import { DatabaseSync } from 'node:sqlite';
+import { openDb, syncRegistry, getDoorByDevice, recordState, recordUnknown, recordSeen, recordBattery, setOnline, getDb } from '../server/src/db.js';
 import { normalizeState, effectiveState, effectiveBattery, toPublic } from '../server/src/state.js';
 
 const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'doorwatch-fresh-'));
@@ -196,6 +197,171 @@ try {
   // 登记表为空(配置文件写坏了)时,不能把已经登在册的门全清空。
   syncRegistry([]);
   check('★ 登记表为空时不清空数据库', getDoorByDevice(DEVICE) !== null);
+
+  // --- 11. 中英双语文案 ---
+  // 服务端要把两套文案一起下发,前端切语言时不用再问服务器要一次。
+  // ★ 英文那份缺字段时必须**回退到中文**,绝不能是空白。
+  console.log('\n[test] toPublic 的 i18n');
+
+  // 先看一个没配英文的门
+  syncRegistry([
+    {
+      id: 'it-office',
+      name: 'IT 办公室',
+      location: 'A512',
+      deviceId: DEVICE,
+      openHint: '中文开着',
+      closedHint: '中文关着',
+    },
+  ]);
+  let pub = toPublic(getDoorByDevice(DEVICE), t0 + 220_000);
+  check('i18n 同时下发 zh / en 两套', Boolean(pub.i18n?.zh && pub.i18n?.en));
+  check('中文那套用中文文案', pub.i18n.zh.name === 'IT 办公室' && pub.i18n.zh.open === '中文开着');
+  check(
+    '★ 没配英文时回退到中文(不是空白)',
+    pub.i18n.en.name === 'IT 办公室' && pub.i18n.en.open === '中文开着',
+    `name="${pub.i18n.en.name}" open="${pub.i18n.en.open}"`,
+  );
+  check('英文位置回退到中文位置', pub.i18n.en.location === 'A512');
+  check('unknown 提示有兜底文案', typeof pub.i18n.zh.unknown === 'string' && pub.i18n.zh.unknown.length > 0);
+  check(
+    '★ 英文 unknown 用英文兜底(不给英文界面塞一句中文)',
+    pub.i18n.en.unknown === 'Sensor offline, status unknown — please contact IT',
+    `实际="${pub.i18n.en.unknown}"`,
+  );
+  check('中文 unknown 用中文兜底', pub.i18n.zh.unknown === '传感器没上线,状态未知 —— 请先联系 IT');
+  check('旧的 hints 结构没被破坏(免得弄坏已有文档和测试)', pub.hints.open === '中文开着');
+
+  // 只配了中文提示、没配英文时的回落
+  syncRegistry([
+    {
+      id: 'it-office',
+      name: 'IT 办公室',
+      location: 'A512',
+      deviceId: DEVICE,
+      openHint: '中文开着',
+      closedHint: '中文关着',
+      unknownHint: '这门的传感器掉线了',
+    },
+  ]);
+  pub = toPublic(getDoorByDevice(DEVICE), t0 + 220_000);
+  check(
+    '★ 只配了中文 unknown 时,英文回退到那份中文(不是空白)',
+    pub.i18n.en.unknown === '这门的传感器掉线了',
+    `实际="${pub.i18n.en.unknown}"`,
+  );
+
+  // 再看一个配了英文的门
+  syncRegistry([
+    {
+      id: 'it-office',
+      name: 'IT 办公室',
+      nameEn: 'IT Office',
+      location: 'A512',
+      locationEn: 'Building A',
+      deviceId: DEVICE,
+      openHint: '中文开着',
+      openHintEn: 'Someone is in',
+      closedHint: '中文关着',
+      closedHintEn: 'Door closed',
+      unknownHint: '中文未知',
+      unknownHintEn: 'Status unknown',
+    },
+  ]);
+  pub = toPublic(getDoorByDevice(DEVICE), t0 + 220_000);
+  check('配了英文就用英文', pub.i18n.en.name === 'IT Office' && pub.i18n.en.open === 'Someone is in');
+  check('中文那套还是中文', pub.i18n.zh.name === 'IT 办公室' && pub.i18n.zh.open === '中文开着');
+  check('英文位置用 locationEn', pub.i18n.en.location === 'Building A');
+  check('英文关门提示用 closedHintEn', pub.i18n.en.closed === 'Door closed');
+  check('英文 unknown 用 unknownHintEn', pub.i18n.en.unknown === 'Status unknown');
+  check('中文 unknown 用 unknownHint', pub.i18n.zh.unknown === '中文未知');
+
+  // --- 12. 老库迁移:缺列要补上 ---
+  //
+  // CREATE TABLE IF NOT EXISTS 对**已存在**的表不会加列,
+  // 所以线上那些老库必须靠 PRAGMA table_info + ALTER TABLE 补列,
+  // 否则 syncRegistry 一写新列就报 "no such column"。
+  console.log('\n[test] 老库补列');
+  const legacyPath = path.join(DATA_DIR, 'legacy.db');
+  {
+    const legacy = new DatabaseSync(legacyPath);
+    // 旧版 doors 表:没有 name_en / location_en / *_hint_en / unknown_hint
+    legacy.exec(`
+      CREATE TABLE doors (
+        id             TEXT PRIMARY KEY,
+        name           TEXT NOT NULL,
+        location       TEXT NOT NULL DEFAULT '',
+        device_id      TEXT NOT NULL UNIQUE,
+        open_hint      TEXT NOT NULL DEFAULT '',
+        closed_hint    TEXT NOT NULL DEFAULT '',
+        state          TEXT NOT NULL DEFAULT 'unknown',
+        online         INTEGER NOT NULL DEFAULT 0,
+        last_change_at INTEGER,
+        last_seen_at   INTEGER,
+        updated_at     INTEGER
+      );
+      INSERT INTO doors (id, name, location, device_id, open_hint, closed_hint, state, online, last_seen_at)
+      VALUES ('it-office', 'IT 办公室', 'A512', 'it-office-door', '中文开着', '中文关着', 'open', 1, ${t0});
+    `);
+    legacy.close();
+  }
+
+  // 打开老库 —— 迁移应该自动把缺的列补上
+  openDb(legacyPath);
+  const legacyCols = getDb()
+    .prepare('PRAGMA table_info(doors)')
+    .all()
+    .map((c) => c.name);
+  for (const col of [
+    'name_en',
+    'location_en',
+    'open_hint_en',
+    'closed_hint_en',
+    'unknown_hint',
+    'unknown_hint_en',
+  ]) {
+    check(`老库补上了 ${col} 列`, legacyCols.includes(col));
+  }
+  check('老数据没丢', getDb().prepare('SELECT COUNT(*) AS n FROM doors').get().n === 1);
+
+  // 迁移必须幂等:再开一次不报错,列也不能重复
+  openDb(legacyPath);
+  const colsAgain = getDb()
+    .prepare('PRAGMA table_info(doors)')
+    .all()
+    .map((c) => c.name);
+  check(
+    '★ 迁移幂等(重复运行不报错、列不重复)',
+    colsAgain.filter((c) => c === 'name_en').length === 1,
+  );
+
+  // 老库上同步登记表,新列也得能写进去
+  syncRegistry([
+    {
+      id: 'it-office',
+      name: 'IT 办公室',
+      nameEn: 'IT Office',
+      location: 'A512',
+      locationEn: 'Building A',
+      deviceId: DEVICE,
+      openHint: '中文开着',
+      openHintEn: 'Someone is in',
+      closedHint: '中文关着',
+      closedHintEn: 'Door closed',
+      unknownHint: '中文未知',
+      unknownHintEn: 'Status unknown',
+    },
+  ]);
+  const legacyRow = getDb().prepare('SELECT * FROM doors WHERE id = ?').get('it-office');
+  check('老库上也能写入英文列', legacyRow.name_en === 'IT Office' && legacyRow.closed_hint_en === 'Door closed');
+  check(
+    '老库上也能写入 unknown_hint 两列',
+    legacyRow.unknown_hint === '中文未知' && legacyRow.unknown_hint_en === 'Status unknown',
+  );
+  check(
+    '★ 老库迁移没覆盖运行时状态',
+    legacyRow.state === 'open' && legacyRow.last_seen_at === t0,
+  );
 } catch (err) {
   failures++;
   console.error(`\n❌ 测试异常: ${err.stack}`);

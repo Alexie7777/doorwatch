@@ -167,8 +167,26 @@ try {
         ADMIN_KEY,
         DOORS_JSON: JSON.stringify({
           doors: [
-            { id: 'it-office', name: 'IT 办公室', location: '行政楼 A 座 2F', deviceId: 'it-office-door' },
-            { id: 'server-room', name: '机房', location: '行政楼 A 座 1F', deviceId: 'server-room-door' },
+            {
+              id: 'it-office',
+              name: 'IT 办公室',
+              nameEn: 'IT Office',
+              location: '行政楼 A 座 2F',
+              locationEn: 'Admin Bldg A, 2F',
+              deviceId: 'it-office-door',
+              openHint: 'IT 有人在,直接过来就行',
+              openHintEn: 'Someone from IT is in — just come over',
+              closedHint: '门已关，IT 暂时不在，可联系值班微信',
+              closedHintEn: 'Door closed, IT is temporarily away. Contact the on-duty WeChat.',
+            },
+            {
+              id: 'server-room',
+              name: '机房',
+              nameEn: 'Server Room',
+              location: '行政楼 A 座 1F',
+              locationEn: 'Admin Bldg A, 1F',
+              deviceId: 'server-room-door',
+            },
           ],
         }),
       },
@@ -293,8 +311,131 @@ try {
   check('客户端有 SSE 看门狗', appText.includes('WATCHDOG_MS'));
   check('客户端有兜底轮询', appText.includes('FALLBACK_POLL_MS'));
   check('客户端监听页面可见性变化', appText.includes('visibilitychange'));
+  check('页面里不再有取版本号那段代码', !appText.includes("$('#version')"));
 
-  // 4. 点"管理"
+  // 4. 中英切换
+  console.log('\n[ui] 中英切换');
+  const zhState = await cdp.eval(
+    'document.querySelector("article.door .state__title")?.textContent?.trim()',
+  );
+  check('默认是中文', zhState === '门开着', `实际="${zhState}"`);
+
+  // 页脚:只剩品牌署名,「管理」和版本号都得消失
+  const footerInfo = await cdp.eval(`
+    (() => {
+      const f = document.querySelector('.footer');
+      return {
+        text: f?.innerText ?? '',
+        hasBrandEl: !!document.querySelector('#footer-brand'),
+        hasVersionEl: !!document.querySelector('#version'),
+        hasManageInFooter: !!f?.querySelector('#manage-btn'),
+      };
+    })()
+  `);
+  check(
+    '页脚显示 Powered By IT Dept',
+    footerInfo.text.includes('Powered By IT Dept'),
+    footerInfo.text.replace(/\s+/g, ' ').trim(),
+  );
+  check(
+    '★ 页脚没有版本号',
+    !footerInfo.text.includes('v1.0.0') && !footerInfo.hasVersionEl,
+  );
+  check(
+    '★ 页脚没有「管理」',
+    !footerInfo.text.includes('管理') && !footerInfo.hasManageInFooter,
+  );
+  const headerManage = await cdp.eval('!!document.querySelector(".topbar #manage-btn")');
+  check('★「管理」按钮挪到了页头', headerManage === true);
+
+  // 切到英文
+  await cdp.eval('document.querySelector("#lang-toggle").click()');
+  await sleep(500);
+  const enState = await cdp.eval(
+    'document.querySelector("article.door .state__title")?.textContent?.trim()',
+  );
+  check('★ 切到英文后「门开着」变成「Door Open」', enState === 'Door Open', `实际="${enState}"`);
+  const htmlLang = await cdp.eval('document.documentElement.lang');
+  check('★ documentElement.lang 变成 en', htmlLang === 'en', `实际="${htmlLang}"`);
+  const enName = await cdp.eval(
+    'document.querySelector("article.door .door__name")?.textContent?.trim()',
+  );
+  check('门名用服务端下发的英文', enName?.startsWith('IT Office'), `实际="${enName}"`);
+  const enHint = await cdp.eval(
+    'document.querySelector("article.door .state__hint")?.textContent?.trim()',
+  );
+  check('提示语用服务端下发的英文', enHint === 'Someone from IT is in — just come over', `实际="${enHint}"`);
+  const enBadge = await cdp.eval(
+    'document.querySelector("article.door .badge--battery")?.textContent?.trim()',
+  );
+  check('电量徽章变成英文', enBadge === 'Battery 87%', `实际="${enBadge}"`);
+  const enToggle = await cdp.eval('document.querySelector("#lang-toggle")?.textContent?.trim()');
+  check('切换按钮显示另一种语言的名字', enToggle === '中', `实际="${enToggle}"`);
+  const enManage = await cdp.eval('document.querySelector("#manage-btn")?.textContent?.trim()');
+  check('页头「管理」按钮变成英文 Manage', enManage === 'Manage', `实际="${enManage}"`);
+  const enMeta = await cdp.eval(
+    'document.querySelector("article.door .door__meta")?.innerText?.replace(/\\s+/g, " ")?.trim()',
+  );
+  check('英文标签和值之间留了空格', enMeta?.includes('Last change: just now'), `实际="${enMeta}"`);
+  const enUnknown = await cdp.eval(
+    'document.querySelectorAll("article.door .state__hint")[1]?.textContent?.trim()',
+  );
+  check(
+    '★ 离线门的提示语也是英文(不给英文界面塞中文)',
+    /^Sensor offline/.test(enUnknown ?? ''),
+    `实际="${enUnknown}"`,
+  );
+
+  // 英文看板截图
+  const shotEn = await cdp.send('Page.captureScreenshot', {
+    format: 'png',
+    captureBeyondViewport: true,
+  });
+  const shotEnPath = path.join(ARTIFACTS, 'dashboard-en.png');
+  fs.writeFileSync(shotEnPath, Buffer.from(shotEn.data, 'base64'));
+  check('英文看板截图已生成', fs.existsSync(shotEnPath), shotEnPath);
+
+  // 刷新后语言还在(靠 localStorage)
+  const reloaded = cdp.once('Page.loadEventFired');
+  await cdp.send('Page.reload', { ignoreCache: true });
+  await reloaded;
+  let readyEn = false;
+  for (let i = 0; i < 40; i++) {
+    const n = await cdp.eval('document.querySelectorAll("article.door").length');
+    if (n === 2) {
+      readyEn = true;
+      break;
+    }
+    await sleep(250);
+  }
+  check('刷新后看板重新渲染', readyEn);
+  const langAfterReload = await cdp.eval('document.documentElement.lang');
+  check('★ 刷新后语言仍然是英文(localStorage)', langAfterReload === 'en', `实际="${langAfterReload}"`);
+  const stateAfterReload = await cdp.eval(
+    'document.querySelector("article.door .state__title")?.textContent?.trim()',
+  );
+  check('刷新后文案仍然是英文', stateAfterReload === 'Door Open', `实际="${stateAfterReload}"`);
+
+  // 切回中文
+  await cdp.eval('document.querySelector("#lang-toggle").click()');
+  await sleep(500);
+  const backZh = await cdp.eval(
+    'document.querySelector("article.door .state__title")?.textContent?.trim()',
+  );
+  check('★ 再点一次变回中文「门开着」', backZh === '门开着', `实际="${backZh}"`);
+  const langBack = await cdp.eval('document.documentElement.lang');
+  check('documentElement.lang 变回 zh', langBack === 'zh', `实际="${langBack}"`);
+
+  // 中文看板截图
+  const shotZh = await cdp.send('Page.captureScreenshot', {
+    format: 'png',
+    captureBeyondViewport: true,
+  });
+  const shotZhPath = path.join(ARTIFACTS, 'dashboard-zh.png');
+  fs.writeFileSync(shotZhPath, Buffer.from(shotZh.data, 'base64'));
+  check('中文看板截图已生成', fs.existsSync(shotZhPath), shotZhPath);
+
+  // 5. 点"管理"
   await cdp.eval('document.querySelector("#manage-btn").click()');
   await sleep(400);
   const sheetOpen = await cdp.eval(

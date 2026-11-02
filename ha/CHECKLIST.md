@@ -291,6 +291,25 @@ node tools/doctor.mjs --doorwatch https://<你的服务器>:8443 --insecure \
 > `location` 就是看板上显示的位置,按你们学校实际写(`A512` 这种房间号就行)。
 > **只有实际接了传感器的门才登记** —— 登记了却没有传感器,看板就会一直显示
 > 「状态未知」。删掉不用的门,重启服务端即可(它会把数据库里的旧记录一并清掉)。
+>
+> 还想让看板能切英文的话,再加几个可选字段(不写就自动回退到中文,不会出错):
+>
+> ```json
+> {
+>   "id": "it-office",
+>   "name": "IT 办公室",
+>   "nameEn": "IT Office",
+>   "location": "A512",
+>   "locationEn": "A512",
+>   "deviceId": "it-office-door",
+>   "openHint": "IT 有人在,直接过来就行",
+>   "openHintEn": "Someone from IT is in — just come over",
+>   "closedHint": "门已关，IT 暂时不在，可联系值班微信",
+>   "closedHintEn": "Door closed, IT is temporarily away. Contact the on-duty WeChat."
+> }
+> ```
+>
+> 看板上点页头的 `EN` 就能切英文,语言选择记在手机浏览器本地,不用每次切。
 
 `ha/automations.yaml` 里发出去的主题:
 

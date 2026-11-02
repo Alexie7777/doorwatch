@@ -116,6 +116,22 @@ export function effectiveBattery(door, now = Date.now()) {
   return door.battery;
 }
 
+/**
+ * 「传感器没上线」时的默认提示语。
+ * 以前是写死在这里的,现在挪到门禁登记表里,每扇门都能定制;
+ * 没定制就还用这一句(见 server/src/doors.js 的 normalize)。
+ */
+export const DEFAULT_UNKNOWN_HINT = '传感器没上线,状态未知 —— 请先联系 IT';
+
+/**
+ * 英文界面的默认提示语。
+ *
+ * 英文那份的回落链是:unknown_hint_en → unknown_hint → 这一句。
+ * 只有在登记表里**完全没写** unknown 提示时才会用到它 ——
+ * 那时候连中文那句都没有,总不能给英文界面塞一句中文。
+ */
+export const DEFAULT_UNKNOWN_HINT_EN = 'Sensor offline, status unknown — please contact IT';
+
 /** 把 doors 表的一行转成前端要的形状 */
 export function toPublic(door, now = Date.now()) {
   const state = effectiveState(door, now);
@@ -140,10 +156,29 @@ export function toPublic(door, now = Date.now()) {
     batteryAt: door.battery_at ?? null,
     // 前端据此区分"时间被脱敏隐藏"和"本来就没有记录"
     timesHidden: config.hideTimes,
+    // hints 保留不动(免得破坏已有测试和文档)
     hints: {
       open: door.open_hint,
       closed: door.closed_hint,
-      unknown: '传感器没上线,状态未知 —— 请先联系 IT',
+      unknown: door.unknown_hint || DEFAULT_UNKNOWN_HINT,
+    },
+    // ★ 中英两套文案一起下发,前端切语言时不用再问服务端要一次。
+    //   英文那份**全部回退到中文**,保证任何时候都不会出现空白。
+    i18n: {
+      zh: {
+        name: door.name,
+        location: door.location,
+        open: door.open_hint,
+        closed: door.closed_hint,
+        unknown: door.unknown_hint || DEFAULT_UNKNOWN_HINT,
+      },
+      en: {
+        name: door.name_en || door.name,
+        location: door.location_en || door.location,
+        open: door.open_hint_en || door.open_hint,
+        closed: door.closed_hint_en || door.closed_hint,
+        unknown: door.unknown_hint_en || door.unknown_hint || DEFAULT_UNKNOWN_HINT_EN,
+      },
     },
     // 未脱敏时给时间,脱敏时只给 null
     lastChangeAtPublic: config.hideTimes ? null : door.last_change_at,

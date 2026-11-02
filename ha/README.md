@@ -645,6 +645,11 @@ MQTT_PASSWORD: 你的密码
 
 打开看板,看状态和 HA 里那个 sensor 是否一致。
 
+> 看板支持中英切换:点页头的 `EN` / `中` 按钮就能换。
+> 英文界面下同一句话是 `Door Open` / `Door Closed` / `Unknown`,
+> 徽章是 `Sensor Online` / `Sensor Offline` —— 语义完全一样。
+> 语言选择记在浏览器本地,换完不用重设。
+
 ### 3. 断电测试(最重要的一步)
 
 **把网关断电,看板必须在一两分钟内变成「状态未知」。**
@@ -653,7 +658,8 @@ MQTT_PASSWORD: 你的密码
 
 1. 断电后,HA 里 `binary_sensor.doorwatch_it_office_door_readable` 应该变成 `off`
    (或者 `sensor.doorwatch_it_office_door_state` 变成 `UNKNOWN`)
-2. 看板随即显示「状态未知」,并标注「传感器离线」
+2. 看板随即显示「状态未知」(英文界面是 `Unknown`),并标注「传感器离线」
+   (英文是 `Sensor Offline`)
 3. 千万别出现这种情况:看板还稳稳地显示「门开着」——
    那说明心跳链路没通,或者 `templates.yaml` 里的实体名填错了
 

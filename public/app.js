@@ -1,4 +1,10 @@
-/* IT 办公室门磁看板 —— 前端 */
+/* IT 办公室门磁看板 —— 前端
+ *
+ * ★ 所有面向用户的文案都走 t(key)(见 i18n.js)。
+ *   模板里不许再硬编码中文 —— 英文界面下那些字会原样露出来。
+ */
+
+import { getLang, setLang, t, onLangChange, monthName } from './i18n.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -24,10 +30,17 @@ let sseLastEventAt = 0;
 /** 兜底轮询的定时器 */
 let fallbackTimer = null;
 
+/**
+ * 三种状态各自的图标和文案键。
+ *
+ * ★ 三态设计(open / closed / unknown)是本项目的命根子,不能简化:
+ *   传感器失联时必须显示「状态未知」,不能拿过期状态充数。
+ *   颜色、图标、文字三条线各自独立地表示状态,少一条都不行。
+ */
 const STATE_META = {
-  open: { icon: '🔓', title: '门开着', cls: 'open' },
-  closed: { icon: '🔒', title: '门关着', cls: 'closed' },
-  unknown: { icon: '⚠️', title: '状态未知', cls: 'unknown' },
+  open: { icon: '🔓', titleKey: 'stateOpen', cls: 'open' },
+  closed: { icon: '🔒', titleKey: 'stateClosed', cls: 'closed' },
+  unknown: { icon: '⚠️', titleKey: 'stateUnknown', cls: 'unknown' },
 };
 
 /* ------------------------------------------------------------------ *
@@ -44,29 +57,44 @@ function esc(s) {
 function relTime(ts) {
   if (!ts) return '—';
   const diff = Date.now() - ts;
-  if (diff < 10_000) return '刚刚';
+  if (diff < 10_000) return t('relJustNow');
   const s = Math.floor(diff / 1000);
-  if (s < 60) return `${s} 秒前`;
+  if (s < 60) return t('relSeconds', { n: s });
   const m = Math.floor(s / 60);
-  if (m < 60) return `${m} 分钟前`;
+  if (m < 60) return t('relMinutes', { n: m });
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h} 小时前`;
+  if (h < 24) return t('relHours', { n: h });
   const d = Math.floor(h / 24);
-  if (d === 1) return '昨天';
-  if (d < 30) return `${d} 天前`;
+  if (d === 1) return t('relYesterday');
+  if (d < 30) return t('relDays', { n: d });
   return fmtTime(ts);
 }
 
 function fmtTime(ts) {
   const d = new Date(ts);
   const p = (n) => String(n).padStart(2, '0');
-  return `${d.getMonth() + 1}月${d.getDate()}日 ${p(d.getHours())}:${p(d.getMinutes())}`;
+  return t('dateFull', {
+    month: monthName(d.getMonth()),
+    day: d.getDate(),
+    time: `${p(d.getHours())}:${p(d.getMinutes())}`,
+  });
 }
 
 function clock(ts) {
   const d = new Date(ts);
   const p = (n) => String(n).padStart(2, '0');
   return `${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/**
+ * 取一扇门在当前语言下的档案。
+ *
+ * 服务端两套文案一起下发(door.i18n.zh / door.i18n.en),
+ * 这里按当前语言挑一套;挑不到就退回原来的 door 字段。
+ */
+function doorLocale(door) {
+  const lang = getLang();
+  return door?.i18n?.[lang] ?? door ?? {};
 }
 
 /** 根据今天的事件重建 24 小时状态条 */
@@ -81,15 +109,15 @@ function buildTimeline(door) {
   const events = door.todayEvents ?? [];
   // 午夜时的状态 = 第一个事件发生前的状态
   let cur = events.length ? (events[0].from_state ?? 'unknown') : door.state;
-  let t = startMs;
+  let t0 = startMs;
   const segs = [];
 
   for (const e of events) {
-    if (e.at > t) segs.push({ state: cur, from: t, to: e.at });
+    if (e.at > t0) segs.push({ state: cur, from: t0, to: e.at });
     cur = e.to_state;
-    t = e.at;
+    t0 = e.at;
   }
-  segs.push({ state: cur, from: t, to: nowMs });
+  segs.push({ state: cur, from: t0, to: nowMs });
 
   return segs
     .map((s) => {
@@ -107,8 +135,8 @@ function buildTimeline(door) {
 /** 时间文本:数据被脱敏 → 提示隐藏;本来就没数据 → 无记录;否则相对时间 */
 function timeCell(door, kind) {
   const ts = kind === 'change' ? door.lastChangeAtPublic : door.lastSeenAtPublic;
-  if (door.timesHidden) return '已隐藏';
-  if (!ts) return '无记录';
+  if (door.timesHidden) return t('relHidden');
+  if (!ts) return t('relNoRecord');
   return `<b data-t="${ts}">${relTime(ts)}</b>`;
 }
 
@@ -123,25 +151,30 @@ function render() {
   main.innerHTML = state.doors
     .map((door) => {
       const meta = STATE_META[door.state] ?? STATE_META.unknown;
-      const hint = door.hints?.[meta.cls] ?? '';
+      const loc = doorLocale(door);
+      const name = loc.name ?? door.name;
+      const location = loc.location ?? door.location;
+      // 提示语优先用当前语言那套,没有就退回 hints(旧数据兼容)
+      const fallbackHint = meta.cls === 'unknown' ? t('unknownHint') : '';
+      const hint = loc[meta.cls] ?? door.hints?.[meta.cls] ?? fallbackHint;
       const onlineBadge = door.online
-        ? '<span class="badge badge--online">传感器在线</span>'
-        : '<span class="badge badge--offline">传感器离线</span>';
+        ? `<span class="badge badge--online">${t('badgeOnline')}</span>`
+        : `<span class="badge badge--offline">${t('badgeOffline')}</span>`;
       const overrideBadge = door.overridden
-        ? '<span class="badge badge--override">人工置顶</span>'
+        ? `<span class="badge badge--override">${t('badgeOverride')}</span>`
         : '';
       // 电量徽章:服务端没报过 / 读数过期就什么都不显示。
       // 低于 20% 高亮 —— 这是蓝牙门磁唯一能提前发现"要换电池了"的信号。
       const batteryBadge = door.battery != null
-        ? `<span class="badge ${door.battery <= 20 ? 'badge--warn' : 'badge--battery'}">电量 ${door.battery}%</span>`
+        ? `<span class="badge ${door.battery <= 20 ? 'badge--warn' : 'badge--battery'}">${t('battery', { n: door.battery })}</span>`
         : '';
       const stats = door.stats ?? { opens: 0, closes: 0 };
 
       return `
       <article class="door door--${meta.cls}" data-door="${esc(door.id)}">
         <div class="door__head">
-          <h2 class="door__name">${esc(door.name)}
-            ${door.location ? `<span class="door__loc">${esc(door.location)}</span>` : ''}
+          <h2 class="door__name">${esc(name)}
+            ${location ? `<span class="door__loc">${esc(location)}</span>` : ''}
           </h2>
           <div>${onlineBadge} ${overrideBadge} ${batteryBadge}</div>
         </div>
@@ -149,20 +182,20 @@ function render() {
         <div class="door__state">
           <div class="state__icon">${meta.icon}</div>
           <div>
-            <div class="state__title">${meta.title}</div>
+            <div class="state__title">${t(meta.titleKey)}</div>
             <p class="state__hint">${esc(hint)}</p>
           </div>
         </div>
 
         <div class="door__meta">
-          <span>最后变化:${timeCell(door, 'change')}</span>
-          <span>心跳:${timeCell(door, 'seen')}</span>
-          <span>今天:开 <b>${stats.opens}</b> 次 / 关 <b>${stats.closes}</b> 次</span>
+          <span>${t('lastChange')}${t('colon')}${timeCell(door, 'change')}</span>
+          <span>${t('heartbeat')}${t('colon')}${timeCell(door, 'seen')}</span>
+          <span>${t('today', { open: `<b>${stats.opens}</b>`, close: `<b>${stats.closes}</b>` })}</span>
         </div>
 
         <div class="timeline">
           <div class="timeline__track">${buildTimeline(door)}</div>
-          <div class="timeline__axis"><span>00:00</span><span>现在</span></div>
+          <div class="timeline__axis"><span>00:00</span><span>${t('now')}</span></div>
         </div>
       </article>`;
     })
@@ -180,7 +213,7 @@ function render() {
 function tick() {
   for (const el of document.querySelectorAll('[data-t]')) {
     const ts = Number(el.dataset.t);
-    const next = ts ? relTime(ts) : '无记录';
+    const next = ts ? relTime(ts) : t('relNoRecord');
     if (el.textContent !== next) el.textContent = next;
   }
 }
@@ -191,19 +224,67 @@ function updateSubtitle() {
 
   // 只有一扇门时直接用它的名字;多扇门就用统称,别让标题撒谎
   if (title) {
-    title.textContent =
-      state.doors.length === 1 ? state.doors[0].name : state.doors.length > 1 ? 'IT 在岗状态' : 'IT 状态';
+    if (state.doors.length === 1) {
+      const loc = doorLocale(state.doors[0]);
+      title.textContent = loc.name ?? state.doors[0].name;
+    } else if (state.doors.length > 1) {
+      title.textContent = t('statusTitle');
+    } else {
+      title.textContent = t('appTitle');
+    }
   }
 
   if (!state.connected) {
-    sub.textContent = '连接断开,正在重试…';
+    sub.textContent = t('disconnected');
     return;
   }
   const open = state.doors.filter((d) => d.state === 'open').length;
   const unknown = state.doors.filter((d) => d.state === 'unknown').length;
-  if (unknown > 0) sub.textContent = `${unknown} 个门状态未知`;
-  else if (open > 0) sub.textContent = '有人值班,可以直接过去';
-  else sub.textContent = '暂无人在办公室';
+  if (unknown > 0) sub.textContent = t('subUnknown', { n: unknown });
+  else if (open > 0) sub.textContent = t('subOpen');
+  else sub.textContent = t('subNone');
+}
+
+/* ------------------------------------------------------------------ *
+ * 语言
+ * ------------------------------------------------------------------ */
+
+/**
+ * 把页面上所有"静态"文案刷成当前语言。
+ *
+ * 卡片内容由 render() 重画,管理面板由 renderManageBody() 重画,
+ * 这里只管那些不随数据变的元素:标题、按钮标签、页脚。
+ */
+function applyLang() {
+  const lang = getLang();
+  document.documentElement.lang = lang === 'en' ? 'en' : 'zh';
+  document.title = t('pageTitle');
+
+  // 切换按钮显示的是"另一种语言"的名字
+  const langBtn = $('#lang-toggle');
+  if (langBtn) {
+    langBtn.textContent = lang === 'zh' ? 'EN' : '中';
+    langBtn.setAttribute('aria-label', t('langSwitch'));
+  }
+  $('#refresh')?.setAttribute('aria-label', t('refresh'));
+  const manageBtn = $('#manage-btn');
+  if (manageBtn) {
+    manageBtn.textContent = t('manage');
+    manageBtn.setAttribute('aria-label', t('manage'));
+  }
+  $('#manage-title') && ($('#manage-title').textContent = t('manage'));
+  $('#manage-close')?.setAttribute('aria-label', t('close'));
+
+  const hint = $('#footer-hint');
+  if (hint) hint.textContent = t('footerHint');
+  const brand = $('#footer-brand');
+  if (brand) brand.textContent = t('poweredBy');
+
+  // 这两个是给分享/搜索结果看的,也算面向用户的文案
+  const desc = document.querySelector('meta[name="description"]');
+  if (desc) desc.setAttribute('content', t('description'));
+  const homeTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+  if (homeTitle) homeTitle.setAttribute('content', t('appTitle'));
 }
 
 /* ------------------------------------------------------------------ *
@@ -352,18 +433,36 @@ async function apiCall(method, path, body) {
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+  if (!res.ok) {
+    const err = new Error(data.error ?? `HTTP ${res.status}`);
+    // 服务端带上 errorKey,客户端就能翻成当前语言
+    err.errorKey = data.errorKey ?? '';
+    throw err;
+  }
   return data;
+}
+
+/**
+ * 把服务端的错误翻成当前语言的文案。
+ * 拿不到 errorKey 就退回原始 error 文本(至少还是个能看懂的中文)。
+ */
+function translateError(err) {
+  if (err?.errorKey) {
+    const s = t(err.errorKey);
+    if (s && s !== err.errorKey) return s;
+  }
+  return err?.message ?? t('requestFailed');
 }
 
 function renderManageBody() {
   const body = $('#manage-body');
+  if (!body) return;
 
   if (!state.adminKey) {
     body.innerHTML = `
-      <p>输入管理密钥(服务器 data/ADMIN_KEY.txt 里那个)以解锁写操作。</p>
-      <input id="key-input" type="password" placeholder="管理密钥" autocomplete="off" />
-      <div class="btn-row"><button class="btn btn--primary" id="key-verify">解锁</button></div>
+      <p>${t('manageHelp')}</p>
+      <input id="key-input" type="password" placeholder="${esc(t('adminKeyPlaceholder'))}" autocomplete="off" />
+      <div class="btn-row"><button class="btn btn--primary" id="key-verify">${t('unlock')}</button></div>
       <div class="msg" id="manage-msg"></div>
     `;
 
@@ -372,7 +471,7 @@ function renderManageBody() {
       const msg = $('#manage-msg');
       if (!key) {
         msg.className = 'msg msg--err';
-        msg.textContent = '请输入密钥';
+        msg.textContent = t('needKey');
         return;
       }
       // 先拿这个密钥去问服务端:对就留下,不对就丢掉
@@ -381,32 +480,35 @@ function renderManageBody() {
         await apiCall('GET', '/api/admin/verify');
         localStorage.setItem('dw_admin_key', key);
         msg.className = 'msg msg--ok';
-        msg.textContent = '已解锁';
+        msg.textContent = t('unlocked');
         renderManageBody();
       } catch (err) {
         state.adminKey = '';
         localStorage.removeItem('dw_admin_key');
         msg.className = 'msg msg--err';
-        msg.textContent = err.message.includes('密钥') ? '密钥不正确' : err.message;
+        // 密钥不对是这个面板里最常见的错,单独给一句话
+        msg.textContent = err?.errorKey === 'bad_admin_key' ? t('badKey') : translateError(err);
       }
     });
     return;
   }
 
   body.innerHTML = `
-    <p>已解锁。置顶用于特殊情况(如全员出差),会覆盖传感器状态。</p>
+    <p>${t('unlockedHelp')}</p>
     ${state.doors
-      .map(
-        (d) => `
+      .map((d) => {
+        const loc = doorLocale(d);
+        const name = loc.name ?? d.name;
+        return `
       <div class="door-admin">
-        <div class="door-admin__name">${esc(d.name)}</div>
+        <div class="door-admin__name">${esc(name)}</div>
         <div class="btn-row">
-          <button class="btn" data-act="closed" data-id="${esc(d.id)}">置顶为关门 4 小时</button>
-          <button class="btn" data-act="open" data-id="${esc(d.id)}">置顶为开门 4 小时</button>
-          <button class="btn" data-act="clear" data-id="${esc(d.id)}">取消置顶</button>
+          <button class="btn" data-act="closed" data-id="${esc(d.id)}">${t('overrideClosed')}</button>
+          <button class="btn" data-act="open" data-id="${esc(d.id)}">${t('overrideOpen')}</button>
+          <button class="btn" data-act="clear" data-id="${esc(d.id)}">${t('clearOverride')}</button>
         </div>
-      </div>`,
-      )
+      </div>`;
+      })
       .join('')}
     <div class="msg" id="manage-msg"></div>
   `;
@@ -419,11 +521,11 @@ function renderManageBody() {
         if (act === 'clear') await apiCall('DELETE', `/api/doors/${id}/override`);
         else await apiCall('POST', `/api/doors/${id}/override`, { state: act, hours: 4 });
         msg.className = 'msg msg--ok';
-        msg.textContent = '已生效';
+        msg.textContent = t('applied');
         await loadDoors();
       } catch (err) {
         msg.className = 'msg msg--err';
-        msg.textContent = err.message;
+        msg.textContent = translateError(err);
       }
     });
   });
@@ -449,6 +551,20 @@ $('#manage-sheet').addEventListener('click', (e) => {
   if (e.target === $('#manage-sheet')) closeManage();
 });
 
+// 语言切换:写进 localStorage,订阅者把整页重画一遍
+$('#lang-toggle').addEventListener('click', () => {
+  setLang(getLang() === 'zh' ? 'en' : 'zh');
+});
+
+onLangChange(() => {
+  applyLang();
+  render();
+  renderManageBody();
+});
+
+// 先把静态文案刷成当前语言,再拉数据
+applyLang();
+
 loadDoors();
 connectSSE();
 
@@ -457,14 +573,6 @@ setInterval(tick, 1000);
 
 // 看门狗:连接被系统悄悄掐掉时自己救回来
 startWatchdog();
-
-// 版本号
-fetch('/api/health')
-  .then((r) => r.json())
-  .then((h) => {
-    $('#version').textContent = `v${h.version}`;
-  })
-  .catch(() => {});
 
 // 注册 Service Worker(支持"添加到主屏幕")
 if ('serviceWorker' in navigator) {

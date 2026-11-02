@@ -86,6 +86,49 @@ body {
   color: var(--text-dim);
 }
 
+/* 页头右侧的一排按钮:管理 / 语言 / 连接状态 */
+.topbar__actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 语言切换:小一点、圆角,配色跟着 --line / --text-dim 走 */
+.topbar__lang {
+  flex: none;
+  height: 32px;
+  min-width: 40px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* 「管理」按钮:从页脚挪到页头,样式和语言按钮一套 */
+.topbar__manage {
+  flex: none;
+  height: 32px;
+  padding: 0 11px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.topbar__lang:active,
+.topbar__manage:active {
+  transform: scale(0.97);
+}
+
 .topbar__refresh {
   flex: none;
   width: 40px;
@@ -358,27 +401,12 @@ body {
   color: #5c6a79;
 }
 
-.footer__row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-}
-
-.link-btn {
-  background: none;
-  border: none;
-  color: #6e7c8c;
+/* 品牌署名 —— 页脚底部那一行(以前这里是「管理 v1.0.0」) */
+.footer__brand {
+  margin: 0;
   font-size: 12px;
-  cursor: pointer;
-  padding: 4px 8px;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.footer__ver {
-  font-size: 11px;
-  color: #3f4b59;
+  color: var(--text-dim);
+  letter-spacing: 0.4px;
 }
 
 /* ---------------- 管理面板 ---------------- */

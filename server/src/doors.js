@@ -14,13 +14,27 @@ const DEFAULT_DOORS = [
   {
     id: 'it-office',
     name: 'IT 办公室',
+    nameEn: 'IT Office',
     location: '',
+    locationEn: '',
     deviceId: 'it-office-door',
     openHint: 'IT 有人在,直接过来就行',
-    closedHint: '门已关,IT 暂时不在,先别跑一趟',
+    openHintEn: 'Someone from IT is in — just come over',
+    closedHint: '门已关，IT 暂时不在，可联系值班微信',
+    closedHintEn: 'Door closed, IT is temporarily away. Contact the on-duty WeChat.',
+    unknownHint: '传感器没上线,状态未知 —— 请先联系 IT',
+    unknownHintEn: 'Sensor offline, status unknown — please contact IT',
   },
 ];
 
+/**
+ * 把登记表里的一条原始配置整理成内部用的形状。
+ *
+ * ★ 英文那一套(*En)全是**可选**的:
+ *   没填就留空字符串,后面(toPublic)再回退到中文那份 ——
+ *   绝不能因为漏配英文就让界面上出现空白。
+ *   门名和位置也一样:locationEn 缺了就用 location。
+ */
 function normalize(raw, index) {
   const id = String(raw.id ?? '').trim();
   if (!id) throw new Error(`doors[${index}] 缺少 id`);
@@ -28,10 +42,18 @@ function normalize(raw, index) {
   return {
     id,
     name: String(raw.name ?? id).trim(),
+    nameEn: String(raw.nameEn ?? raw.name_en ?? '').trim(),
     location: String(raw.location ?? '').trim(),
+    locationEn: String(raw.locationEn ?? raw.location_en ?? '').trim(),
     deviceId,
     openHint: String(raw.openHint ?? '门开着,可以过来').trim(),
-    closedHint: String(raw.closedHint ?? '门已关,先别跑一趟').trim(),
+    openHintEn: String(raw.openHintEn ?? raw.open_hint_en ?? '').trim(),
+    closedHint: String(raw.closedHint ?? '门已关，IT 暂时不在，可联系值班微信').trim(),
+    closedHintEn: String(raw.closedHintEn ?? raw.closed_hint_en ?? '').trim(),
+    // unknown 提示语以前是写死在 state.js 里的,挪到这里每扇门都能定制;
+    // 不填就沿用以前那一句(见 state.js 的 DEFAULT_UNKNOWN_HINT)。
+    unknownHint: String(raw.unknownHint ?? raw.unknown_hint ?? '').trim(),
+    unknownHintEn: String(raw.unknownHintEn ?? raw.unknown_hint_en ?? '').trim(),
   };
 }
 
