@@ -6,7 +6,7 @@
    但换来的是"改了样式/逻辑马上生效",不用等缓存过期。
    真正需要的是离线时还能打开,这个由缓存兜底保证。 */
 
-const CACHE = 'doorwatch-v3';
+const CACHE = 'doorwatch-v4';
 // 只预缓存外壳。style.css / app.js 在 index.html 里带 ?v= 版本戳,
 // 运行时按带戳的 URL 缓存,避免同一份资源在缓存里存两份。
 const SHELL = ['/', '/index.html', '/icon.svg', '/manifest.webmanifest'];
@@ -33,6 +33,13 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
+
+  // ★ SSE 绝对不经过 Service Worker。
+  //   SW 只是一个中间人:浏览器回收它的时候,正在中转的响应流会跟着被掐断,
+  //   页面上就变成「连接断开」—— 而网络其实好得很。
+  //   移动端浏览器回收 SW 比桌面积极得多,这条特别容易踩到。
+  //   而且这个接口本来就不缓存,让 SW 参与纯属多此一举。
+  if (url.pathname === '/api/stream') return;
 
   // 接口数据不缓存,门的状态必须实时
   if (url.pathname.startsWith('/api/')) {

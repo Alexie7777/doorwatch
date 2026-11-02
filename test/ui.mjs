@@ -264,6 +264,36 @@ try {
   );
   check('电量 87% 不算低电量(不高亮)', batteryWarn === 0, `高亮徽章 ${batteryWarn} 个`);
 
+  // 页头图标必须和 favicon 是同一张图(以前页头是 CSS 画的,长得不一样)
+  const logo = await cdp.eval(`
+    (() => {
+      const img = document.querySelector('.topbar__logo');
+      const fav = document.querySelector('link[rel="icon"]');
+      return {
+        tag: img?.tagName ?? null,
+        src: img?.getAttribute('src') ?? null,
+        fav: fav?.getAttribute('href') ?? null,
+      };
+    })()
+  `);
+  check('页头图标是 <img>', logo.tag === 'IMG', `实际=<${logo.tag}>`);
+  check('页头图标和 favicon 是同一张图', logo.src === logo.fav, `${logo.src} vs ${logo.fav}`);
+
+  // Service Worker 绝对不能碰 SSE —— SW 被回收时会把响应流一起掐断
+  const swText = await (await fetch(`${BASE}/sw.js`)).text();
+  check(
+    'Service Worker 不再拦截 SSE',
+    swText.includes("/api/stream") && !/pathname\.startsWith\('\/api\/'\)/.test(
+      swText.split("/api/stream")[0],
+    ),
+  );
+
+  // 客户端必须有自愈能力:看门狗 + 兜底轮询
+  const appText = await (await fetch(`${BASE}/app.js`)).text();
+  check('客户端有 SSE 看门狗', appText.includes('WATCHDOG_MS'));
+  check('客户端有兜底轮询', appText.includes('FALLBACK_POLL_MS'));
+  check('客户端监听页面可见性变化', appText.includes('visibilitychange'));
+
   // 4. 点"管理"
   await cdp.eval('document.querySelector("#manage-btn").click()');
   await sleep(400);

@@ -60,22 +60,17 @@ body {
   min-width: 0;
 }
 
+/* 页头图标 —— 直接用 icon.svg,和浏览器标签页的 favicon、
+   手机主屏图标是同一张图。以前这里是 CSS 画的手机轮廓,
+   跟 favicon 长得不一样,看着像两个 App。 */
 .topbar__logo {
   width: 34px;
   height: 34px;
   flex: none;
   border-radius: 10px;
-  background: linear-gradient(145deg, #2f81f7, #1f6feb);
   box-shadow: 0 3px 12px rgba(31, 111, 235, 0.35);
-  position: relative;
-}
-
-.topbar__logo::after {
-  content: '';
-  position: absolute;
-  inset: 10px 12px;
-  border: 2px solid rgba(255, 255, 255, 0.92);
-  border-radius: 2px 5px 2px 5px;
+  display: block;
+  object-fit: cover;
 }
 
 .topbar h1 {

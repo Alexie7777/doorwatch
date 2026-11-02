@@ -157,7 +157,13 @@ function handleMessage(topic, payload, packet) {
     }
     case 'heartbeat': {
       // 重放的心跳不算数 —— 心跳是"我此刻还活着"的证明,历史记录证明不了。
-      if (fresh) recordSeen(deviceId);
+      if (!fresh) break;
+      recordSeen(deviceId);
+      // ★ 心跳也要推给看板。
+      //   前端那个「心跳:X 前」是把时间戳烤进 DOM 的,前端每秒只重算相对时间,
+      //   不重推的话时间戳就停在最后一次推送 —— 门明明每秒都在上报,
+      //   看板上却显示「心跳:9 分钟前」,看着像传感器死了。
+      pushState();
       break;
     }
     case 'battery': {

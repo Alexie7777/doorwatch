@@ -336,7 +336,7 @@ async function main() {
   const handler = async (req, res) => {
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
 
-    // CORS:允许内网其它页面嵌��(比如学校门户放个入口)
+    // CORS:允许内网其它页面嵌入(比如学校门户放个入口)
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Admin-Key, Authorization');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');

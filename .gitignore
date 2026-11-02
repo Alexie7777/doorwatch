@@ -1,7 +1,6 @@
 node_modules/
 data/
-data-demo/
-data-battery-demo/
+data-*/
 *.log
 .DS_Store
 .env

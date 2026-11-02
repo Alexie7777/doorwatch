@@ -9,6 +9,21 @@ const state = {
   events: null,
 };
 
+/**
+ * SSE 相关的三个常量/变量。
+ *
+ * ★ 这套东西的全部意义是「出门前扫一眼」—— 用户看到的东西必须是真的。
+ *   所以连接断了以后,宁可多花点流量轮询,也不能让看板上留着一份
+ *   过期数据却看起来是新的。
+ */
+const WATCHDOG_MS = 180_000; // 3 分钟没收到 SSE 数据 → 主动重建连接
+const FALLBACK_POLL_MS = 15_000; // 连接断了之后,每 15 秒拉一次全量
+let sse = null;
+/** 最后一次收到 SSE 数据的时间(看门狗用) */
+let sseLastEventAt = 0;
+/** 兜底轮询的定时器 */
+let fallbackTimer = null;
+
 const STATE_META = {
   open: { icon: '🔓', title: '门开着', cls: 'open' },
   closed: { icon: '🔒', title: '门关着', cls: 'closed' },
@@ -210,18 +225,38 @@ async function loadDoors() {
   }
 }
 
+/**
+ * 建立 SSE 连接。
+ *
+ * ★ 为什么要自己盯着,而不能全靠 EventSource 自带重连:
+ *   规范里 EventSource 只在「连接被中断」时自动重连;
+ *   如果重连时服务器返回了非 200 或者 Content-Type 不对,
+ *   浏览器会**彻底放弃**(readyState = CLOSED),再也不重试了。
+ *   于是页面就一直挂在「连接断开,正在重试…」,其实早就没人再试了。
+ *   —— 这是真踩过的坑:手机锁屏再解锁、网络抖动一下,看板就再也不更新了。
+ *
+ *   所以这里加了两道保险:
+ *   ① 看门狗:超过 WATCHDOG_MS 没收到任何数据,就主动把连接重建
+ *   ② 页面重新可见时,如果断着,立刻重建
+ */
 function connectSSE() {
+  closeSSE();
+
   const es = new EventSource('/api/stream');
+  sse = es;
 
   es.addEventListener('doors', (e) => {
     state.doors = JSON.parse(e.data);
     state.connected = true;
+    sseLastEventAt = Date.now();
+    stopFallbackPoll();
     $('#conn-dot')?.classList.add('dot--on');
     render();
   });
 
   es.onopen = () => {
     state.connected = true;
+    sseLastEventAt = Date.now();
     $('#conn-dot')?.classList.add('dot--on');
   };
 
@@ -229,9 +264,79 @@ function connectSSE() {
     state.connected = false;
     $('#conn-dot')?.classList.remove('dot--on');
     updateSubtitle();
-    // EventSource 自带重连,这里只更新 UI
+    // EventSource 自带重连,这里只更新 UI。
+    // 万一它不重试(见上面的说明),看门狗会兜底。
+    startFallbackPoll();
   };
 }
+
+function closeSSE() {
+  if (!sse) return;
+  try {
+    sse.close();
+  } catch {
+    /* ignore */
+  }
+  sse = null;
+}
+
+/**
+ * 看门狗:太久没收到数据就重建连接。
+ *
+ * 数据多久来一次?门磁每 60 秒一个心跳,服务端收到心跳就推一次快照 ——
+ * 所以 3 分钟还没动静,那就八成是连接已经死了,只是浏览器没告诉我们。
+ *
+ * ★ 不管 state.connected 是什么都要检查:
+ *   最麻烦的情况恰恰是"浏览器自己放弃了重连" ——
+ *   那时 state.connected 是 false,EventSource 也不会再试,
+ *   如果看门狗也跟着 state.connected 走,就永远救不回来了。
+ */
+function startWatchdog() {
+  setInterval(() => {
+    if (Date.now() - sseLastEventAt < WATCHDOG_MS) return;
+    console.warn('[doorwatch] SSE 超过', Math.round(WATCHDOG_MS / 1000), '秒没动静,重建连接');
+    connectSSE();
+  }, 15_000);
+}
+
+/**
+ * 兜底轮询:SSE 断了的时候,定时拉一次 /api/doors。
+ *
+ * 为什么要这个:看板上留着「9 分钟前的门开着」,而用户没注意到右上角的
+ * 灰点 —— 那就是在撒谎。轮询慢一点没关系,至少数据是真的。
+ */
+function startFallbackPoll() {
+  if (fallbackTimer) return;
+  fallbackTimer = setInterval(async () => {
+    try {
+      const res = await fetch('/api/doors', { cache: 'no-store' });
+      if (!res.ok) return;
+      const data = await res.json();
+      state.doors = data.doors ?? [];
+      render();
+    } catch {
+      /* 断网就断网,等下一轮 */
+    }
+  }, FALLBACK_POLL_MS);
+}
+
+function stopFallbackPoll() {
+  if (!fallbackTimer) return;
+  clearInterval(fallbackTimer);
+  fallbackTimer = null;
+}
+
+/**
+ * 页面重新可见时立刻检查一下连接。
+ *
+ * 手机锁屏 / 切走 App,系统的网络栈会把这条连接悄悄掐掉,
+ * 回来的时候浏览器可能已经把 EventSource 判死刑了。
+ * 这里主动重建一次,用户回到页面就能看到最新状态。
+ */
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  if (Date.now() - sseLastEventAt > 60_000) connectSSE();
+});
 
 /* ------------------------------------------------------------------ *
  * 管理面板
@@ -349,6 +454,9 @@ connectSSE();
 
 // 每秒刷新"X 秒前"这类相对时间(只改文本节点,不重建 DOM)
 setInterval(tick, 1000);
+
+// 看门狗:连接被系统悄悄掐掉时自己救回来
+startWatchdog();
 
 // 版本号
 fetch('/api/health')
