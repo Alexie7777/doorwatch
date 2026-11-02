@@ -100,6 +100,17 @@ export const config = {
    */
   onlineTimeoutMs: envInt('ONLINE_TIMEOUT_MS', 180_000),
 
+  /**
+   * 电池读数多久算过期(毫秒)。默认 7 天。
+   *
+   * 为什么电量也要有超时:
+   *   电量是"上一次读到的数",不是"现在的数"。设备可能早就没电了,
+   *   而我们手里还留着它最后一次上报的 87%。
+   *   放太久还不认,看板上就会出现一个看着很正常、其实早就没意义的数字。
+   *   —— 跟状态那块一样的原则:宁可说不知道,不要拿过期数据糊弄人。
+   */
+  batteryTimeoutMs: envInt('BATTERY_TIMEOUT_MS', 7 * 24 * 3600_000),
+
   /** 隐藏具体时间,只显示开/关。用于不想对外暴露人员出入时间的场景 */
   hideTimes: envBool('HIDE_TIMES', false),
 

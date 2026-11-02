@@ -115,6 +115,11 @@ function render() {
       const overrideBadge = door.overridden
         ? '<span class="badge badge--override">人工置顶</span>'
         : '';
+      // 电量徽章:服务端没报过 / 读数过期就什么都不显示。
+      // 低于 20% 高亮 —— 这是蓝牙门磁唯一能提前发现"要换电池了"的信号。
+      const batteryBadge = door.battery != null
+        ? `<span class="badge ${door.battery <= 20 ? 'badge--warn' : 'badge--battery'}">电量 ${door.battery}%</span>`
+        : '';
       const stats = door.stats ?? { opens: 0, closes: 0 };
 
       return `

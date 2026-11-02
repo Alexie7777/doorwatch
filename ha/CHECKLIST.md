@@ -320,7 +320,7 @@ docker compose logs -f doorwatch
 
 ---
 
-## 第 6 步 验收(10 分钟,5 个用例)
+## 第 6 步 验收(10 分钟,6 个用例)
 
 前两个用例过了,基本就成了。第三个开始是"不许撒谎"的验收。
 
@@ -331,6 +331,13 @@ docker compose logs -f doorwatch
 | 3 | 关上门,等一分钟 | 看板变「已关」 | ≤ 30 秒 |
 | 4 | **把蓝牙网关断电**(或让门磁不可达) | 看板变「状态未知」,**不能继续显示"开着/关着"** | ≤ 3 分钟 |
 | 5 | 网关恢复供电 | 看板自动恢复真实状态 | ≤ 1 分钟 |
+| 6 | 等一次电量上报自动化触发 | 看板上门磁旁边出现「电量 XX%」徽章 | ≤ 30 分钟 |
+
+> 用例 6 没出现徽章?先确认 `ha/automations.yaml` 的第 4 条自动化
+> (「门磁电量 → doorwatch(IT 办公室)」)已经加载,并且**服务端是新版**
+> (旧服务端不订阅 `battery` 主题,收到就丢)。
+> 用 `node tools/doctor.mjs --doorwatch … --insecure` 看「服务端」那一环里
+> 有没有 `已订阅 doorwatch/+/{state,status,heartbeat,battery}`。
 
 ### 用例 4 没过?先别慌,分清是哪种"死"
 
@@ -351,8 +358,13 @@ docker compose logs -f doorwatch
 三个可选对策:
 
 1. **看电量**:Xiaomi MIoT 门磁带 `battery-level`,HA 实体属性里就有。
-   让 IT 定期看一眼,或者后续给 doorwatch 加一条"电量低"的提醒
-   (服务端目前还没订阅电池主题,见 README「可以往下做的地方」)。
+   **doorwatch 现在已经把这条链路接上了** —— `ha/automations.yaml` 里那条
+   「门磁电量 → doorwatch(IT 办公室)」每半小时把电量推到
+   `doorwatch/it-office-door/battery`,服务端存下来,看板上会出现一个
+   「电量 87%」的徽章,**低于 20% 会高亮**。
+   > 电量读数**不会**刷新心跳,也不改门状态 —— 一台没电的设备要是还在报电量,
+   > 看板必须继续显示「状态未知」。电量超过 7 天(`BATTERY_TIMEOUT_MS`)就不认了。
+   想收到手机推送,再加一条低电量提醒(见 [`ha/README.md`](README.md) 的「电池」一节)。
 2. **保留 ESPHome 方案**:干接点门磁 + ESP32 自己发心跳,
    传感器一断电,心跳立刻停,doorwatch 30 秒内就知道 —— 这条路线才真正测得到"传感器死没死"。
 3. **接受现状**:蓝牙门磁的电池一般能撑一年多,真到没电那天,

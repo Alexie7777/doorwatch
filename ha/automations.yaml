@@ -212,6 +212,54 @@
             qos: 1
             retain: false
 
+# ---------------------------------------------------------------------
+#  门磁电量 → doorwatch
+# ---------------------------------------------------------------------
+#
+#  为什么要有这条:
+#   蓝牙 + 云端这条路有个绕不开的盲区 ——
+#   门磁自己没电了,但网关和云都正常时,云端会**继续返回最后一次的值**。
+#   看板测不出"传感器已经死了",只能一直显示上次的开/关。
+#
+#   电量是唯一能提前发现这件事的信号:低到一定程度就该换电池了。
+#   (ESP32 方案里传感器一断电心跳立刻停,不需要这条;
+#    蓝牙方案没有那个信号,只能靠电量。)
+#
+#  xiaomi_miot 的电量是**属性**(battery_level),不是独立实体 ——
+#  所以用 state_attr() 取。有些集成会另外暴露 sensor.xxx_battery,
+#  那种就去掉 state_attr() 直接盯那个实体。
+#
+#  ★ 发电量**不会**刷新 doorwatch 的心跳,服务端认得出来:
+#    电量是"顺便报一下的",不能证明"门状态刚刚读到过"。
+#    一台没电的设备要是还在报电量,看板必须继续显示「状态未知」。
+# ---------------------------------------------------------------------
+- id: doorwatch_it_office_battery
+  alias: "门磁电量 → doorwatch(IT 办公室)"
+  description: "定期把门磁电量推给 doorwatch,看板在电量低时提醒换电池。"
+  mode: single
+  triggers:
+    # 每半小时报一次(电池不会突然没电,不用更勤)
+    - trigger: time_pattern
+      minutes: "/30"
+    # 电量一有变化就立刻报
+    - trigger: numeric_state
+      entity_id: binary_sensor.isa_dw2hl_b95b_magnet_sensor
+      attribute: battery_level
+      below: 100
+  actions:
+    - if:
+        - condition: template
+          value_template: >
+            {% set b = state_attr('binary_sensor.isa_dw2hl_b95b_magnet_sensor', 'battery_level') %}
+            {{ b is not none and b is number }}
+      then:
+        - action: mqtt.publish
+          data:
+            topic: "doorwatch/it-office-door/battery"
+            payload: "{{ state_attr('binary_sensor.isa_dw2hl_b95b_magnet_sensor', 'battery_level') }}"
+            qos: 1
+            retain: true
+
 # =====================================================================
 #  挂到墙上之前,先做这个:
 #  微信/Telegram 之类的推送,出门前手机上收到一条,比打开网页更快。

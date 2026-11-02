@@ -91,6 +91,12 @@ export function loadAutomationTemplates(root) {
 
   const out = [];
   for (const auto of doc) {
+    // ★ 只认「会推门状态」的自动化 —— 它的模板条件才是保险丝。
+    //   电量上报那条自动化也有一个模板条件,但它推的是 /battery,
+    //   跟"传感器还活着吗"没关系,混进来会让体检误报「保险丝不通过」。
+    const actionsText = JSON.stringify(auto?.actions ?? []);
+    if (!/\/state"/.test(actionsText)) continue;
+
     for (const action of auto?.actions ?? []) {
       const branches = [action?.if].flat().filter(Boolean);
       for (const cond of branches) {

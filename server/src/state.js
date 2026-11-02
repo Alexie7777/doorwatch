@@ -99,6 +99,23 @@ export function isOnline(door, now = Date.now()) {
   return Boolean(door.online);
 }
 
+/**
+ * 一扇门对外展示的电量。
+ *
+ * @returns {number|null} 0-100;null = 不知道电量
+ *
+ * ★ 和状态一样的原则:宁可说不知道,不要拿过期数据糊弄人。
+ *   电量是"上一次读到的数"。设备可能三天前就没电了,
+ *   而我们手里还留着它最后上报的 87% —— 那个数字早就没意义了。
+ *   超过 batteryTimeoutMs(默认 7 天)就不认,返回 null。
+ */
+export function effectiveBattery(door, now = Date.now()) {
+  if (!door || door.battery == null) return null;
+  if (!door.battery_at) return null;
+  if (now - door.battery_at > config.batteryTimeoutMs) return null;
+  return door.battery;
+}
+
 /** 把 doors 表的一行转成前端要的形状 */
 export function toPublic(door, now = Date.now()) {
   const state = effectiveState(door, now);
@@ -117,7 +134,10 @@ export function toPublic(door, now = Date.now()) {
     lastChangeAt: door.last_change_at,
     // 最后一次收到传感器消息的时刻
     lastSeenAt: door.last_seen_at,
-    battery: door.battery ?? null,
+    // 电池电量(0-100);null = 不知道 / 读数已过期
+    battery: effectiveBattery(door, now),
+    // 最后一次读到电量的时刻
+    batteryAt: door.battery_at ?? null,
     // 前端据此区分"时间被脱敏隐藏"和"本来就没有记录"
     timesHidden: config.hideTimes,
     hints: {

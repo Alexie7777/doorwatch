@@ -744,27 +744,58 @@ HA 这边一切正常(实体状态不变、`last_reported` 一直在推进),
 
 ### ★ HA 的 MQTT 集成报 "MQTT protocol migration failed"
 
-新版本 HA 会把 MQTT 连接迁到协议版本 5,而 doorwatch 内置的 broker
-(aedes 1.2.0)**还不支持 MQTT 5** —— 它自己的 README 里就写着
-`MQTT 5.0 (not support yet)`。于是 HA 会弹一个红色 repair:
+#### 它到底是什么
 
-> The automatic migration to MQTT protocol version 5 failed.
-> The currently configured protocol version for MQTT broker 10.37.2.208 is 3.1.1 ...
-> **This stops working in version 2027.1.0.**
+HA 源码(`homeassistant/components/mqtt/__init__.py` 的 `async_setup_entry`)写着:
 
-**现在不影响使用** —— HA 会继续用 3.1.1 连着,该发消息照发。
-但 **2027.1.0 之后 HA 会停止支持 3.1.1**,到那时这条链路会断,得提前换。
+```python
+if (protocol := entry.data.get(CONF_PROTOCOL, PROTOCOL_311)) != PROTOCOL_5:
+    # Automatically migrate the broker protocol to v5 if possible
+    # Can be removed with HA Core 2027.1
+    new_entry_data = entry.data.copy()
+    new_entry_data[CONF_PROTOCOL] = PROTOCOL_5
+    # 试连一次 v5
+    if await try_connection(new_entry_data):
+        → 静默把配置条目升级成 v5,顺手删掉这个 repair
+    else:
+        → 建一个 repair:protocol_5_migration
+          breaks_in_ha_version="2027.1.0"
+```
 
-两个选择:
+翻译成人话:
 
-**① 先锁死 3.1.1(治标,五分钟)**
+| 什么时候 | 会发生什么 |
+|---|---|
+| **每次加载 MQTT 集成**(HA 启动 / 重载) | 如果当前不是 v5,HA 就**试连一次 MQTT 5** |
+| 试连成功 | HA **静默升级**成 v5,repair 消失,以后一直用 v5 |
+| 试连失败(aedes 就是这样) | 弹一个红色 repair,HA **继续用 3.1.1 正常跑** |
 
-HA → 设置 → 设备与服务 → MQTT → ⋮ → 配置 → 协议版本选 `3.1.1`,
-那个 repair 就没了。代价:2027.1.0 之前还是得换 broker。
+**为什么 aedes 试连会失败**:aedes 1.2.0 的 README 里就写着 `MQTT 5.0 (not support yet)`。
+MQTT 5 的 CONNECT 包带 properties,aedes 解析不了,连接直接被拒。
 
-**② 换 Mosquitto(推荐,一次到位)**
+#### 现在有没有影响?
 
-Mosquitto 原生支持 MQTT 5,还更轻。**doorwatch 的服务端代码零改动**支持外部 broker
+**没有。** HA 继续用 3.1.1 连着,收发都正常 —— 你刚验证过的整条链路走的就是 3.1.1。
+这个 repair 只是提醒你"该换了",不影响任何功能。
+
+#### 2027.1.0 那一天会发生什么
+
+`breaks_in_ha_version="2027.1.0"` 的含义是:**从 HA 2027.1.0 起,还在 3.1.1 的
+MQTT 配置条目会被 breaking change 机制直接拒绝加载**。
+不是"降级",不是"多一句警告" —— 是 **MQTT 集成整个不工作**:
+
+- 自动化里的 `mqtt.publish` 全部报错 → doorwatch 收不到任何消息
+- 看板显示「状态未知」,而且这次是真的读不到
+
+同时源码里那句 `Can be removed with HA Core 2027.1` 说明:到 2027.1,
+连"帮你试连一次自动升级"这套逻辑都会被删掉。
+
+> ⏰ **现在是 2026 年 11 月,离 HA 2027.1 只剩两个月。**
+> 建议现在就换,别拖到年底 —— 升级 HA 通常还要挑时间,提前把 broker 换掉最省事。
+
+#### 怎么换:换 Mosquitto(推荐,一次到位)
+
+Mosquitto 2 原生支持 MQTT 5,还更省内存。**doorwatch 服务端零改动**就支持外部 broker
 (设 `MQTT_HOST` 就行),所以只要改 compose:
 
 ```yaml
@@ -796,7 +827,23 @@ persistence_location /mosquitto/data/
 ⚠️ `allow_anonymous true` 只适合**内网**。要给校外访问的话改成账号密码,
 doorwatch 侧填 `MQTT_USERNAME` / `MQTT_PASSWORD`,HA 侧填同样的账号。
 
-> 换完 broker 之后,HA 的 MQTT 集成记得**重新配一次** broker 地址和协议版本(选 5)。
+> 换完之后 HA 的 MQTT 集成要**重新配一次** broker 地址,协议版本选 5。
+> 下次 HA 启动时它自己会试连 v5 —— 成功就把配置条目升级成 v5,那个 repair 自动消失。
+
+#### ❌ 一条被源码证伪的说法:「手动锁死 3.1.1 就能消掉 repair」
+
+本节以前写的是"去 HA 的 MQTT 配置里把协议版本选 3.1.1,repair 就没了"。
+**那是错的**,判断条件摆在那儿:
+
+```python
+if (protocol := entry.data.get(CONF_PROTOCOL, PROTOCOL_311)) != PROTOCOL_5:
+```
+
+它问的是「**现在是不是 v5**」,不是「**用户有没有显式选过 3.1.1**」。
+你手动选 3.1.1 → `protocol` 依然 `!= PROTOCOL_5` → HA 下次启动**照样去试 v5**
+→ 照样失败 → **照样弹 repair**。
+
+所以:**这个 repair 没有配置层面的消除办法,只有把 broker 换成支持 MQTT 5 的才行。**
 
 ### BLE 门磁只能走云,延迟 15–30 秒
 
@@ -837,7 +884,18 @@ xiaomi_miot:
 
 ### 电池
 
-CR2032,官方标称可用 1–2 年。别等它彻底没电 —— 建个低电量提醒:
+CR2032,官方标称可用 1–2 年。别等它彻底没电。
+
+**doorwatch 现在能显示电量了** —— `ha/automations.yaml` 里那条「门磁电量 →
+doorwatch(IT 办公室)」每半小时把电量推到 `doorwatch/it-office-door/battery`,
+服务端存下来,看板上出现一个「电量 87%」的徽章;**低于 20% 会高亮**。
+
+> 为什么蓝牙方案非要这一条:
+> ESP32 方案里传感器一断电心跳立刻停,doorwatch 30 秒内就知道它死了。
+> 蓝牙方案没有这个信号 —— 门磁没电、网关和云都正常时,云端会**继续返回
+> 最后一次的值**,看板测不出传感器已经死了。**电量是唯一的预警。**
+
+还想收到手机推送的话,再加一条低电量提醒:
 
 ```yaml
 - id: doorwatch_battery_low
@@ -858,6 +916,17 @@ CR2032,官方标称可用 1–2 年。别等它彻底没电 —— 建个低电�
 > `xiaomi_miot` 的电量是**属性**(`battery_level`),不是独立实体。
 > 有些集成会另外暴露一个 `sensor.xxx_battery`,那样就去掉 `attribute:` 那行、
 > 直接盯那个实体。
+
+> ★ 电量读数**不会**刷新 doorwatch 的心跳。
+> 服务端认得出来:电量是「顺便报一下的」,不能证明「门状态刚刚读到过」。
+> 一台没电的设备要是还在报电量,看板必须继续显示「状态未知」。
+> 同理,电量读数超过 7 天(`BATTERY_TIMEOUT_MS`)就不认了 ——
+> 设备可能早就没了,而我们手里还留着它最后上报的 87%。
+>
+> 还有一条:**broker 重放的 retained 旧电量消息只更新数字、不更新时间戳。**
+> 服务端每次重启都会重新订阅,broker 会把 retained 存储里的旧消息重放一遍 ——
+> 那条消息是什么时候读到的没人知道,写上「现在」就是拿过期读数冒充新的。
+> 所以时间戳只认真正新鲜送达的消息。
 
 ### 数据会不会出户
 

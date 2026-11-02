@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import mqtt from 'mqtt';
 import { Aedes } from 'aedes';
 import { config } from './config.js';
-import { recordState, recordSeen, recordUnknown, setOnline, getDoorByDevice } from './db.js';
+import { recordState, recordSeen, recordUnknown, recordBattery, setOnline, getDoorByDevice } from './db.js';
 import { normalizeState } from './state.js';
 import { pushState } from './live.js';
 
@@ -19,6 +19,10 @@ import { pushState } from './live.js';
  *   doorwatch/<deviceId>/state     -> OPEN | CLOSED
  *   doorwatch/<deviceId>/status    -> online | offline   (遗嘱消息,掉线时 Broker 自动发)
  *   doorwatch/<deviceId>/heartbeat -> alive              (60s 一跳,用来判断传感器还活着)
+ *   doorwatch/<deviceId>/battery   -> 87                 (电量百分比 0-100,可选)
+ *
+ * ★ battery 是**可选**的一路:它只更新电量,绝不刷新心跳、不改状态。
+ *   电量消息不能证明"门状态刚刚读到过"。
  */
 
 let broker = null;
@@ -156,6 +160,30 @@ function handleMessage(topic, payload, packet) {
       if (fresh) recordSeen(deviceId);
       break;
     }
+    case 'battery': {
+      // 电量是"顺便报一下的",不是门状态的证明。
+      // ★ 所以这里**不**调用 recordSeen —— 一台没电的设备要是还在报电量,
+      //   看板就必须继续显示"传感器离线 / 状态未知",不能被电量消息救活。
+      //
+      // ★ 重放的 retained 旧消息只更新数字,不更新时间戳:
+      //   我们不知道那条消息是什么时候读到的,写上 now 就是撒谎。
+      const level = Number.parseInt(text, 10);
+      if (!Number.isFinite(level) || level < 0 || level > 100) {
+        console.warn(
+          `[mqtt] ${deviceId} 上报了看不懂的电量: "${text}"(已忽略,` +
+            `应为 0-100 的整数)`,
+        );
+        break;
+      }
+      const { changed } = recordBattery(deviceId, level, Date.now(), { fresh });
+      if (changed) {
+        console.log(
+          `[mqtt] ${deviceId} 电量 -> ${level}%` + (fresh ? '' : '(broker 重放,没记时间戳)'),
+        );
+        pushState();
+      }
+      break;
+    }
     default:
       break;
   }
@@ -188,11 +216,14 @@ function startClient() {
     client.on('connect', () => {
       console.log(`[mqtt] 已连接 broker: ${url}`);
       const p = config.topicPrefix;
-      client.subscribe([`${p}/+/state`, `${p}/+/status`, `${p}/+/heartbeat`], (err) => {
-        if (err) console.error('[mqtt] 订阅失败:', err.message);
-        else console.log(`[mqtt] 已订阅 ${p}/+/{state,status,heartbeat}`);
-        resolve();
-      });
+      client.subscribe(
+        [`${p}/+/state`, `${p}/+/status`, `${p}/+/heartbeat`, `${p}/+/battery`],
+        (err) => {
+          if (err) console.error('[mqtt] 订阅失败:', err.message);
+          else console.log(`[mqtt] 已订阅 ${p}/+/{state,status,heartbeat,battery}`);
+          resolve();
+        },
+      );
     });
 
     client.on('message', (topic, payload, packet) => handleMessage(topic, payload, packet));

@@ -30,6 +30,8 @@ export function openDb(file = paths.db) {
       online         INTEGER NOT NULL DEFAULT 0,
       last_change_at INTEGER,                            -- 上次开/关切换的时间
       last_seen_at   INTEGER,                            -- 上次收到传感器任何消息的时间
+      battery        INTEGER,                            -- 电池百分比 0-100(NULL = 不知道)
+      battery_at     INTEGER,                            -- 最后一次读到电量的时间
       override_state TEXT,                               -- 人工置顶: open | closed | null
       override_until INTEGER,                            -- 人工置顶的失效时间,NULL 表示不过期
       updated_at     INTEGER
@@ -47,6 +49,24 @@ export function openDb(file = paths.db) {
     CREATE INDEX IF NOT EXISTS idx_events_door_at ON events(door_id, at DESC);
     CREATE INDEX IF NOT EXISTS idx_events_at ON events(at DESC);
   `);
+
+  // ------------------------------------------------------------------
+  //  迁移:老库补列
+  //
+  //  CREATE TABLE IF NOT EXISTS 对**已存在**的表不会做任何事,
+  //  所以新加的列在老库上根本不会出现 —— 那张 doors 表还停在旧结构,
+  //  后面 UPDATE ... SET battery = ? 直接报 "no such column"。
+  //
+  //  这里显式查一遍表结构,缺哪列补哪列。幂等,反复跑没副作用。
+  // ------------------------------------------------------------------
+  const cols = db.prepare('PRAGMA table_info(doors)').all().map((c) => c.name);
+  for (const [name, ddl] of [['battery', 'INTEGER'], ['battery_at', 'INTEGER']]) {
+    if (!cols.includes(name)) {
+      db.exec(`ALTER TABLE doors ADD COLUMN ${name} ${ddl}`);
+      console.log(`[db] 已给 doors 表补上 ${name} 列`);
+    }
+  }
+
   return db;
 }
 
@@ -147,6 +167,44 @@ export function recordSeen(deviceId, at = Date.now()) {
         WHERE device_id = ?`,
     )
     .run(at, at, deviceId);
+}
+
+/**
+ * 记录一次电量读数。
+ *
+ * ★ 这里**故意不动** state / online / last_seen_at:
+ *   电量是"顺便报一下的",不是"门状态刚刚读到过"的证明。
+ *   要是把它算进心跳,一台电池耗尽、门磁早就不动的设备,
+ *   只要还有人报电量,看板就会一直显示"传感器在线 + 门关着" ——
+ *   那是在撒谎,正是这个项目最要避免的事。
+ *
+ *   电量过期不认,交给 state.js 的 effectiveBattery() 判断。
+ *
+ * @param {number} level 电量百分比 0-100
+ * @param {boolean} fresh
+ *   true  = 设备刚发来的新读数,可以记"什么时候读到的"。
+ *   false = broker 重放的 retained 旧消息 —— **只更新数字,不更新时间戳**。
+ *           我们没法知道那条 retained 消息是什么时候读到的,
+ *           写上 now 就是拿一个过期读数冒充新的。
+ *           (状态那边的 recordState 已经是同样的处理:重放只更新值,不算存活。)
+ */
+export function recordBattery(deviceId, level, at = Date.now(), { fresh = true } = {}) {
+  const door = getDoorByDevice(deviceId);
+  if (!door) return { door: null, changed: false };
+
+  const prevAt = door.battery_at ?? null;
+  // 重放的旧消息:保留原来那个真实的时间戳,不要动它。
+  const nextAt = fresh ? at : prevAt;
+
+  // 值变了,或者以前压根没有时间戳(以前 effectiveBattery 一直是 null,
+  // 现在有真实时间戳了,看板上的徽章会从"不显示"变成"显示")—— 都算变化。
+  const changed = door.battery !== level || prevAt == null;
+
+  getDb()
+    .prepare('UPDATE doors SET battery = ?, battery_at = ?, updated_at = ? WHERE device_id = ?')
+    .run(level, nextAt, at, deviceId);
+
+  return { door: getDoorByDevice(deviceId), changed };
 }
 
 /**

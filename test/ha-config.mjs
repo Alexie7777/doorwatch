@@ -119,6 +119,10 @@ console.log('\n[test] 保险丝的存活判据(模板实体的时间戳是冻结
  */
 const fuseTemplates = [];
 for (const auto of automationsDoc ?? []) {
+  // ★ 只认「会推门状态」的自动化 —— 它的模板条件才是保险丝。
+  //   电量上报那条也有一个模板条件,但它推的是 /battery,
+  //   跟"传感器还活着吗"没关系,混进来会让这些断言误判。
+  if (!/\/state"/.test(JSON.stringify(auto?.actions ?? []))) continue;
   for (const action of auto?.actions ?? []) {
     for (const cond of [action?.if].flat().filter(Boolean)) {
       if (cond?.condition === 'template') fuseTemplates.push(cond.value_template ?? '');
@@ -149,6 +153,18 @@ check('automations.yaml 里读到了 MQTT 主题', topics.length > 0, `${topics.
 const unknownTopics = [...new Set(topics)].filter((t) => !doorIds.has(t));
 check('所有主题的 deviceId 都在 doors.json 里登记过', unknownTopics.length === 0,
   unknownTopics.length ? `未登记: ${unknownTopics.join(', ')}` : '');
+
+console.log('\n[test] 电量上报(蓝牙方案的"传感器快没电了"唯一预警)');
+const batteryTopics = [...automationsText.matchAll(/topic:\s*"doorwatch\/([^/"]+)\/battery"/g)]
+  .map((m) => m[1]);
+check('automations.yaml 里有电量上报这条', batteryTopics.length > 0, batteryTopics.join(', '));
+check('电量 topic 的 deviceId 也登记过',
+  batteryTopics.length > 0 && batteryTopics.every((t) => doorIds.has(t)));
+check('电量取的是 battery_level 属性', /battery_level/.test(automationsText));
+check('发之前先确认属性真的是数字(不会发出 "None")',
+  /b is not none and b is number/.test(automationsText));
+check('电量走的是独立 topic,没有混进状态 topic',
+  !/topic:\s*"doorwatch\/[^"]+\/state"[^}]*battery_level/.test(automationsText));
 
 console.log('\n[test] 模板实体对得上');
 /**
