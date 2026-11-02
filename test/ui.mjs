@@ -198,6 +198,8 @@ try {
   sim.publish('doorwatch/it-office-door/status', 'online', { qos: 1 });
   sim.publish('doorwatch/it-office-door/state', 'OPEN', { qos: 1, retain: true });
   sim.publish('doorwatch/it-office-door/heartbeat', 'alive', { qos: 1 });
+  // 电量:看板要在卡片头部显示出来(以前算出来了却忘了插进模板,这里钉住)
+  sim.publish('doorwatch/it-office-door/battery', '87', { qos: 1 });
 
   // 3. 起 Chrome
   const chrome = findChrome();
@@ -251,6 +253,16 @@ try {
     'document.querySelector("article.door .state__title")?.textContent?.trim()',
   );
   check('第一张卡片显示"门开着"', state1 === '门开着', `实际="${state1}"`);
+
+  const batteryBadge = await cdp.eval(
+    'document.querySelector("article.door .badge--battery")?.textContent?.trim()',
+  );
+  check('卡片上显示电量徽章', batteryBadge === '电量 87%', `实际="${batteryBadge}"`);
+
+  const batteryWarn = await cdp.eval(
+    'document.querySelectorAll("article.door .badge--warn").length',
+  );
+  check('电量 87% 不算低电量(不高亮)', batteryWarn === 0, `高亮徽章 ${batteryWarn} 个`);
 
   // 4. 点"管理"
   await cdp.eval('document.querySelector("#manage-btn").click()');

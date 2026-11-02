@@ -128,7 +128,7 @@ function render() {
           <h2 class="door__name">${esc(door.name)}
             ${door.location ? `<span class="door__loc">${esc(door.location)}</span>` : ''}
           </h2>
-          <div>${onlineBadge} ${overrideBadge}</div>
+          <div>${onlineBadge} ${overrideBadge} ${batteryBadge}</div>
         </div>
 
         <div class="door__state">
