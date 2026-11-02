@@ -107,6 +107,103 @@ check('退出码非 0', down.code !== 0, `退出码 ${down.code}`);
 check('给出了拉起服务端的命令', down.out.includes('docker compose'));
 check('结论说明服务端没起来', down.out.includes('服务端没起来'));
 
+/* ------------------------------------------------------------------ *
+ * 假 HA:验证 https 写错时能自动降级,以及自动化检查
+ * ------------------------------------------------------------------ */
+console.log('\n[test] doctor:连 HA(故意用 https 写错)');
+const haServer = http.createServer((req, res) => {
+  const json = (obj) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(obj));
+  };
+  if (req.url === '/api/states') {
+    const now = new Date().toISOString();
+    json([
+      {
+        entity_id: 'sensor.doorwatch_it_office_door_state',
+        state: 'OPEN',
+        attributes: { friendly_name: 'Doorwatch IT Office Door State' },
+        last_updated: now,
+      },
+      {
+        entity_id: 'binary_sensor.doorwatch_it_office_door_readable',
+        state: 'on',
+        attributes: { friendly_name: 'Doorwatch IT Office Door Readable' },
+        last_updated: now,
+      },
+      {
+        entity_id: 'binary_sensor.isa_dw2hl_b95b_magnet_sensor',
+        state: 'off',
+        attributes: { friendly_name: '门磁' },
+        last_updated: now,
+        last_reported: now,
+      },
+      {
+        entity_id: 'automation.doorwatch_it_office_report',
+        state: 'on',
+        attributes: { friendly_name: '每分钟体检 → doorwatch(IT 办公室)', last_triggered: now },
+        last_updated: now,
+      },
+    ]);
+    return;
+  }
+  res.writeHead(404, { 'Content-Type': 'application/json' });
+  res.end('{}');
+});
+await new Promise((resolve) => haServer.listen(0, '127.0.0.1', resolve));
+const haPort = haServer.address().port;
+
+// HA 默认是 http,用户很可能写成 https —— 工具要能自己降级
+const ha = await new Promise((resolve) => {
+  const child = spawn(
+    process.execPath,
+    [
+      path.join(ROOT, 'tools', 'doctor.mjs'),
+      '--doorwatch', `http://127.0.0.1:${port}`,
+      '--ha', `https://127.0.0.1:${haPort}`,
+      '--token', 'test-token',
+    ],
+    { cwd: ROOT },
+  );
+  let out = '';
+  child.stdout.on('data', (c) => { out += c; });
+  child.stderr.on('data', (c) => { out += c; });
+  child.on('close', (code) => resolve({ code, out }));
+});
+
+check('https 写错时自动降级成 http 并连上', ha.out.includes('门状态模板 = OPEN'), '没连上 HA');
+check('提示了降级原因', ha.out.includes('已自动改用 http'));
+check('校验出可读性模板是 on/off', ha.out.includes('可读性模板 = on'));
+check('打印了原始门磁实体', ha.out.includes('原始门磁实体'));
+check('列出了 doorwatch 的自动化', ha.out.includes('每分钟体检'));
+check('报告了自动化上次触发时间', ha.out.includes('上次触发'));
+
+console.log('\n[test] doctor:HA 里没有自动化');
+haServer.removeAllListeners('request');
+haServer.on('request', (req, res) => {
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify([]));
+});
+const noAuto = await new Promise((resolve) => {
+  const child = spawn(
+    process.execPath,
+    [
+      path.join(ROOT, 'tools', 'doctor.mjs'),
+      '--doorwatch', `http://127.0.0.1:${port}`,
+      '--ha', `http://127.0.0.1:${haPort}`,
+      '--token', 'test-token',
+    ],
+    { cwd: ROOT },
+  );
+  let out = '';
+  child.stdout.on('data', (c) => { out += c; });
+  child.stderr.on('data', (c) => { out += c; });
+  child.on('close', (code) => resolve({ code, out }));
+});
+check('报出「没有 doorwatch 相关的自动化」', noAuto.out.includes('没有 doorwatch 相关的自动化'));
+check('指出了 configuration.yaml 缺 include', noAuto.out.includes('automation: !include automations.yaml'));
+
+haServer.close();
 server.close();
 
 console.log(`\n${failures === 0 ? '✅ doctor 测试全部通过' : `❌ ${failures} 项未通过`}\n`);

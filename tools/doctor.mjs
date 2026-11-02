@@ -29,6 +29,8 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 const MARK = { ok: '✅', bad: '❌', warn: '⚠️', info: '·' };
 
 let problems = 0;
+/** 传输层降级提示(https→http、自签证书) */
+let transportNote = null;
 
 function parseArgs(argv) {
   const out = {};
@@ -88,16 +90,30 @@ function httpGet(url, { headers = {}, insecure = false, timeout = 8000 } = {}) {
   });
 }
 
-/** 自签证书:先按正常方式连,报证书错误就自动降级重试一次 */
+/**
+ * 拿 JSON。两种常见情况会自动降级重试:
+ *   ① 自签证书 → 关掉证书校验再试一次
+ *   ② 把 http 写成 https(HA 默认是 http)→ 换回 http 再试一次
+ *      典型报错:wrong version number / EPROTO / tls_validate_record_header
+ */
 async function getJson(url, opts = {}) {
   let res;
   try {
     res = await httpGet(url, opts);
   } catch (err) {
-    const certIssue = /certificate|self[- ]signed|SSL|TLS/i.test(err?.message ?? '');
-    if (certIssue && !opts.insecure) {
+    const msg = err?.message ?? '';
+    // ① 先判「https 写成了 http」—— 它和 ② 的报错都带 "SSL" 字样,
+    //    但特征是 TLS 握手阶段的 wrong version number / EPROTO。
+    if (/wrong version number|EPROTO|not a TLS/i.test(msg) && url.startsWith('https:')) {
+      const plain = url.replace(/^https:/, 'http:');
+      const retry = await httpGet(plain, opts);
+      retry.downgraded = true;
+      transportNote = '地址写成了 https,已自动改用 http 重试';
+      res = retry;
+    } else if (/certificate|self[- ]signed|unable to verify/i.test(msg) && !opts.insecure) {
       const retry = await httpGet(url, { ...opts, insecure: true });
       retry.selfSigned = true;
+      transportNote = '证书是自签的,已跳过校验(生产环境建议换成正式证书)';
       res = retry;
     } else {
       throw err;
@@ -143,7 +159,7 @@ try {
   line(
     mqtt.clients > 0 ? MARK.ok : MARK.warn,
     `MQTT broker:${mqtt.embedded ? '内置' : '外部'},端口 ${mqtt.brokerPort ?? '?'}`,
-    `当前 ${mqtt.clients ?? 0} 个客户端连着`,
+    `当前 ${mqtt.clients ?? 0} 个客户端连着(含 doorwatch 自己那 1 个)`,
   );
   if (!mqtt.clients) {
     console.log('     ↳ 一个客户端都没有 —— HA 还没连上 MQTT,或者没部署 HA 那套自动化');
@@ -195,7 +211,9 @@ if (!args.ha) {
 } else {
   const haHeaders = { Authorization: `Bearer ${args.token}`, 'Content-Type': 'application/json' };
   try {
+    transportNote = null;
     const states = await getJson(`${args.ha}/api/states`, { headers: haHeaders, timeout: 10000 });
+    if (transportNote) line(MARK.info, transportNote);
     const map = new Map(states.map((s) => [s.entity_id, s]));
 
     const st = map.get('sensor.doorwatch_it_office_door_state');
@@ -223,6 +241,30 @@ if (!args.ha) {
     if (raw) {
       line(MARK.info, `原始门磁实体 = ${raw.state}`,
         `last_reported ${age(Date.parse(raw.last_reported ?? ''))}`);
+    }
+
+    // 自动化加载了没、在不在跑 —— 这决定了「没消息」的两种可能:
+    //   自动化没加载 → 什么都不推
+    //   自动化在跑但门磁读不到 → 每分钟推 offline
+    const autos = states.filter((s) => s.entity_id.startsWith('automation.'));
+    const ours = autos.filter((s) =>
+      /doorwatch/i.test(s.entity_id)
+      || /doorwatch|门磁|体检|每分钟/i.test(s.attributes?.friendly_name ?? ''));
+    if (!ours.length) {
+      line(MARK.bad, 'HA 里没有 doorwatch 相关的自动化',
+        'automations.yaml 没加载 —— configuration.yaml 里少了 automation: !include automations.yaml');
+    } else {
+      for (const a of ours) {
+        const last = a.attributes?.last_triggered;
+        const when = last && last !== 'unknown' ? age(Date.parse(last)) : '从未触发过';
+        line(MARK.info, `${a.attributes?.friendly_name ?? a.entity_id}`,
+          `state=${a.state}  上次触发 ${when}`);
+      }
+      const never = ours.filter((a) => !a.attributes?.last_triggered
+        || a.attributes.last_triggered === 'unknown');
+      if (never.length) {
+        console.log('     ↳ 有自动化从来没触发过 —— 先去 HA 的「设置 → 自动化」看它是不是报错了');
+      }
     }
   } catch (err) {
     line(MARK.bad, '连不上 HA', err.message);

@@ -779,7 +779,12 @@ sqlite3 /var/lib/doorwatch/doorwatch.db \
 两者要在同一个可互访的网络里。
 
 **Q:看板一直显示"状态未知"?**
-先分清是哪种情况:
+先跑体检,别瞎猜:
+```bash
+node tools/doctor.mjs --doorwatch https://<服务器>:8443 --insecure \
+  --ha http://<HA>:8123 --token <TOKEN>
+```
+它会告诉你断在哪一环。再按下面分情况:
 
 - **刚部署完、还没接传感器** → **这是正常的**。看板只显示传感器确实报上来的状态,
   没数据就说「不知道」。接上门磁(ESP32 固件 或 米家+HA)就会变。
@@ -788,6 +793,15 @@ sqlite3 /var/lib/doorwatch/doorwatch.db \
   1. 服务日志里有没有"传感器接入"的记录 → 没有就是 ESP32 没连上 broker,查 WiFi 和 broker IP
   2. 有接入但没状态 → 查 `mqtt_topic_prefix` 和 `config/doors.json` 的 `deviceId` 是否一致
   3. 之前有状态、后来变未知 → 查传感器供电和心跳
+- **看板显示「最后收到 N 小时前」,但 MQTT 上有客户端连着** → 数据源那边断了,
+  不是 doorwatch 的问题。走 HA 方案的话,九成是 `xiaomi_miot` 的 token 过期了
+  (`SERVICETOKEN_EXPIRED`),解法见 [`ha/README.md`](ha/README.md) 第七节。
+
+**Q:HA 报 "MQTT protocol migration failed"**
+新版本 HA 想把 MQTT 连接迁到协议 5,而内置的 broker(aedes)还不支持 MQTT 5。
+**现在不影响使用**,但 **2027.1.0 之后 HA 会停掉 3.1.1**,到那时得换 Mosquitto。
+完整解法(含可直接抄的 compose 配置)见
+[`ha/README.md`](ha/README.md) 第七节。
 
 **Q:端口被占,容器起不来?**
 ```bash

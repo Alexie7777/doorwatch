@@ -646,6 +646,62 @@ HA 这边一切正常(实体状态不变、`last_reported` 一直在推进),
 
 - 或者手动:设置 → 设备与服务 → Xiaomi Miot Auto → ⋮ → 重新加载。
 
+### ★ HA 的 MQTT 集成报 "MQTT protocol migration failed"
+
+新版本 HA 会把 MQTT 连接迁到协议版本 5,而 doorwatch 内置的 broker
+(aedes 1.2.0)**还不支持 MQTT 5** —— 它自己的 README 里就写着
+`MQTT 5.0 (not support yet)`。于是 HA 会弹一个红色 repair:
+
+> The automatic migration to MQTT protocol version 5 failed.
+> The currently configured protocol version for MQTT broker 10.37.2.208 is 3.1.1 ...
+> **This stops working in version 2027.1.0.**
+
+**现在不影响使用** —— HA 会继续用 3.1.1 连着,该发消息照发。
+但 **2027.1.0 之后 HA 会停止支持 3.1.1**,到那时这条链路会断,得提前换。
+
+两个选择:
+
+**① 先锁死 3.1.1(治标,五分钟)**
+
+HA → 设置 → 设备与服务 → MQTT → ⋮ → 配置 → 协议版本选 `3.1.1`,
+那个 repair 就没了。代价:2027.1.0 之前还是得换 broker。
+
+**② 换 Mosquitto(推荐,一次到位)**
+
+Mosquitto 原生支持 MQTT 5,还更轻。**doorwatch 的服务端代码零改动**支持外部 broker
+(设 `MQTT_HOST` 就行),所以只要改 compose:
+
+```yaml
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mqtt-data:/mosquitto/data
+  doorwatch:
+    environment:
+      MQTT_HOST: mosquitto          # ← 指到 mosquitto 这个服务
+      MQTT_PORT_EXTERNAL: 1883
+
+volumes:
+  mqtt-data:
+```
+
+`deploy/mosquitto.conf`:
+
+```
+listener 1883
+allow_anonymous true
+persistence true
+persistence_location /mosquitto/data/
+```
+
+⚠️ `allow_anonymous true` 只适合**内网**。要给校外访问的话改成账号密码,
+doorwatch 侧填 `MQTT_USERNAME` / `MQTT_PASSWORD`,HA 侧填同样的账号。
+
+> 换完 broker 之后,HA 的 MQTT 集成记得**重新配一次** broker 地址和协议版本(选 5)。
+
 ### BLE 门磁只能走云,延迟 15–30 秒
 
 BLE 设备没有本地直连,只能让网关中转到米家云再读回来。
