@@ -161,10 +161,17 @@ check('automations.yaml 里有电量上报这条', batteryTopics.length > 0, bat
 check('电量 topic 的 deviceId 也登记过',
   batteryTopics.length > 0 && batteryTopics.every((t) => doorIds.has(t)));
 check('电量取的是 battery_level 属性', /battery_level/.test(automationsText));
-check('发之前先确认属性真的是数字(不会发出 "None")',
-  /b is not none and b is number/.test(automationsText));
+check('★ 也认独立的电量实体(型号/版本不同,电量可能不在属性上)',
+  /sensor\.isa_dw2hl_b95b_battery_level/.test(automationsText));
+check('发之前先确认拿到的真的是数字(不会发出 "None")',
+  /num is not none and num >= 0 and num <= 100/.test(automationsText));
+check('★ 取不到就发 none,服务端会拒收(不撒谎)',
+  /else 'none'/.test(automationsText));
 check('电量走的是独立 topic,没有混进状态 topic',
   !/topic:\s*"doorwatch\/[^"]+\/state"[^}]*battery_level/.test(automationsText));
+check('★ 有一条不依赖属性存在的触发路径(定时上报)',
+  /trigger:\s*time_pattern/.test(automationsText) &&
+  /minutes:\s*"\/30"/.test(automationsText));
 
 console.log('\n[test] 模板实体对得上');
 /**

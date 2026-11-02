@@ -902,20 +902,41 @@ doorwatch(IT 办公室)」每半小时把电量推到 `doorwatch/it-office-door/
   alias: "门磁低电量提醒"
   mode: single
   triggers:
-    - trigger: numeric_state
-      entity_id: binary_sensor.isa_dw2hl_b95b_magnet_sensor
-      attribute: battery_level
-      below: 20
+    - trigger: time_pattern
+      minutes: "/30"
   actions:
-    - action: notify.mobile_app_xxx
-      data:
-        title: "门磁电量不足"
-        message: "IT 办公室门磁只剩 {{ state_attr('binary_sensor.isa_dw2hl_b95b_magnet_sensor', 'battery_level') }}%,记得换电池"
+    - variables:
+        battery_payload: >
+          {% set a = state_attr('binary_sensor.isa_dw2hl_b95b_magnet_sensor', 'battery_level') %}
+          {% set b = states('sensor.isa_dw2hl_b95b_battery_level') %}
+          {% set c = states('sensor.isa_dw2hl_b95b_battery') %}
+          {% set raw = a if a is not none else (b if b not in ['unknown', 'unavailable'] else c) %}
+          {% set num = raw | float(none) %}
+          {{ (num | int) if num is not none and num >= 0 and num <= 100 else 'none' }}
+    - if:
+        - condition: template
+          value_template: "{{ (battery_payload | string) | int(100) < 20 }}"
+      then:
+        - action: notify.mobile_app_xxx
+          data:
+            title: "门磁电量不足"
+            message: "IT 办公室门磁只剩 {{ battery_payload }}%,记得换电池"
 ```
 
-> `xiaomi_miot` 的电量是**属性**(`battery_level`),不是独立实体。
-> 有些集成会另外暴露一个 `sensor.xxx_battery`,那样就去掉 `attribute:` 那行、
-> 直接盯那个实体。
+> ★ **电量在哪有两种可能,两种都要认**:
+> - 主实体上的**属性** `battery_level`(`xiaomi_miot` 默认会把它挂到该设备的所有实体上)
+> - 独立的**实体** `sensor.isa_dw2hl_b95b_battery_level`(有些版本/型号把每个 MIoT 属性都做成独立实体)
+>
+> 想知道你这台到底是哪种,HA 设置 → 工具 → 模板,粘这一行:
+> ```jinja
+> {% for id in states | list if 'isa_dw2hl' in id %}{{ id }} = {{ states[id].state }}
+> {% endfor %}
+> ```
+> 本仓库的自动化**两种都认**,所以只要设备能被 HA 读到电量,就一定能推出去。
+>
+> 为什么不用 `numeric_state` + `attribute:` 当触发器:
+> 万一电量不在属性上,那个触发器会**永远不响**,而且 HA 不报错。
+> 改成「定时器 + 读的时候再取」之后,取不到就干脆不发 —— 看板显示"不知道",不撒谎。
 
 > ★ 电量读数**不会**刷新 doorwatch 的心跳。
 > 服务端认得出来:电量是「顺便报一下的」,不能证明「门状态刚刚读到过」。
@@ -944,7 +965,7 @@ doorwatch(IT 办公室)」每半小时把电量推到 `doorwatch/it-office-door/
 |---|---|
 | [`ha/CHECKLIST.md`](CHECKLIST.md) | **门磁已接入 HA 之后的落地清单** —— 6 步操作 + 验收用例 + 故障对照表 |
 | `ha/templates.yaml` | 归一化门状态 → `OPEN` / `CLOSED` / `UNKNOWN`,含方向开关和新鲜度判据 |
-| `ha/automations.yaml` | 三条自动化:状态变化即时上报 / 每分钟体检 / HA 启动补发 |
+| `ha/automations.yaml` | 四条自动化:状态变化即时上报 / 每分钟体检 / HA 启动补发 / 电量上报 |
 | `tools/ha-probe.mjs` | 探针:列出门磁候选实体、验方向、看哪个时间戳在推进 |
 | `ha/README.md` | 本文件 |
 

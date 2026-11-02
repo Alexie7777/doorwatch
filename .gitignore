@@ -25,6 +25,7 @@ test/artifacts/*
 # 模板仿真器生成的中间文件(由 tools/dump-ha-templates.mjs 产出)
 tools/.ha-templates.json
 tools/.ha-automations.json
+tools/.ha-battery.json
 
 # 临时提交信息文件
 .commit-msg.txt

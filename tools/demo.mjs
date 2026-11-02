@@ -40,11 +40,47 @@ function run(label, cmd, args, env = {}) {
   return child;
 }
 
+// ★ 演示用的是**自己的一份三门配置**,不读 config/doors.json。
+//   真实部署只接了一扇门(IT 办公室),但演示要同时展示三种状态:
+//   关着 / 开着 / 传感器离线(状态未知)。
+//   所以这里用 DOORS_JSON 塞一份演示专用的登记表进去 ——
+//   DOORS_JSON 的优先级高于 DOORS_FILE,不会碰到真实配置。
+const DEMO_DOORS = JSON.stringify({
+  doors: [
+    {
+      id: 'it-office',
+      name: 'IT 办公室',
+      location: 'A512',
+      deviceId: 'it-office-door',
+      openHint: 'IT 有人在,直接过来就行',
+      closedHint: '门已关,IT 暂时不在,先别跑一趟',
+    },
+    {
+      id: 'server-room',
+      name: '机房',
+      location: '行政楼 A 座 1F',
+      deviceId: 'server-room-door',
+      openHint: '机房有人,调试设备可直接找我们',
+      closedHint: '机房无人,请勿进入',
+    },
+    {
+      id: 'it-store',
+      name: 'IT 备件间',
+      location: '行政楼 A 座 2F',
+      deviceId: 'it-store-door',
+      openHint: '备件间有人,取件直接来',
+      closedHint: '备件间无人,需要请先联系 IT',
+    },
+  ],
+});
+
 run('server', process.execPath, ['--disable-warning=ExperimentalWarning', 'server/src/index.js'], {
   DATA_DIR: path.join(ROOT, 'data-demo'),
   HTTPS: String(useHttps),
   PORT: String(PORT),
   MQTT_PORT: String(MQTT_PORT),
+  // 演示专用的三门登记表,不动真实配置
+  DOORS_JSON: DEMO_DOORS,
   // 心跳超时。模拟器心跳 10 秒一跳,这里给 30 秒(3 倍冗余),
   // 和真实配置一致:传感器心跳 60 秒一跳,超时 180 秒。
   ONLINE_TIMEOUT_MS: process.env.ONLINE_TIMEOUT_MS ?? '30000',

@@ -60,7 +60,7 @@
 
 ### 3. 现在看板显示「状态未知」—— 这是对的,不是坏了
 
-刚部署完、还没接传感器的时候,三扇门都会显示:
+刚部署完、还没接传感器的时候,门会显示:
 
 ```
 ⚠️ 状态未知        [传感器离线]
@@ -92,7 +92,7 @@
 │ ●  IT 在岗状态                          │  ← 副标题是给所有人看的结论
 │              有人值班,可以直接过去      │
 ├────────────────────────────────────────┤
-│ IT 办公室  行政楼 A 座 2F   [传感器在线]│
+│ IT 办公室  A512                [传感器在线]│
 │   🔓 门开着                            │
 │   IT 有人在,直接过来就行                │
 │   最后变化:3 分钟前  心跳:10 秒前       │
@@ -165,7 +165,7 @@ node tools/doctor.mjs --doorwatch https://<你的服务器>:8443 --insecure \
   ✅ MQTT broker:内置,端口 1883  当前 2 个客户端连着
 
 [2/5] 看板上的门
-  ✅ 登记了 3 扇门
+  ✅ 登记了 1 扇门
   ✅ IT 办公室门  状态=门开着  在线=是  最后收到 8 秒前
 
 [3/5] HA 侧模板实体
@@ -180,7 +180,7 @@ node tools/doctor.mjs --doorwatch https://<你的服务器>:8443 --insecure \
   ✅ HA 错误日志里没有模板相关的报错
 
 [4/5] 主题与 deviceId 对齐
-  ✅ doorwatch 登记的 deviceId: it-office-door, server-room-door, it-store-door
+  ✅ doorwatch 登记的 deviceId: it-office-door
   ✅ 自动化发布用的 deviceId: it-office-door
   ✅ 两边对得上
 
@@ -284,6 +284,9 @@ node tools/demo.mjs
 - **IT 办公室** = 门关着(灰色)
 - **机房** = 门开着(绿色)
 - **IT 备件间** = 状态未知(琥珀色,故意不给它接传感器,演示掉线的样子)
+
+> 演示用的是**自己的一份三门配置**(`DOORS_JSON`),不读 `config/doors.json` ——
+> 真实部署只接了一扇门,但演示要同时展示三种状态。
 
 想单独模拟一个传感器:
 
@@ -591,16 +594,20 @@ docker compose logs -f doorwatch
 日志里出现这几行就算起来了:
 
 ```
-[doorwatch] 已登记 3 扇门: IT 办公室、机房、IT 备件间
+[doorwatch] 已登记 1 扇门: IT 办公室
 [mqtt] 内置 broker 已启动: 0.0.0.0:1883
 [doorwatch] 看板已启动,端口 8443
 ```
+
+> 从登记表中删掉一扇门之后,重启服务会看到:
+> `[db] 已移除登记表中不存在的门: 机房(server-room)`
+> 看板上的那扇门也就没了。(以前只做 upsert 不做删除,删了配置也白删。)
 
 验证:
 
 ```bash
 curl -k https://127.0.0.1:8443/api/health
-# {"ok":true,"version":"1.0.0","doors":3,...}
+# {"ok":true,"version":"1.0.0","doors":1,...}
 ```
 
 > 容器里的构建上下文是仓库根目录,但 `.dockerignore` 已经把 `node_modules/`、
@@ -696,7 +703,7 @@ node server/src/index.js
     {
       "id": "it-office",
       "name": "IT 办公室",
-      "location": "行政楼 A 座 2F",
+      "location": "A512",
       "deviceId": "it-office-door",
       "openHint": "IT 有人在,直接过来就行",
       "closedHint": "门已关,IT 暂时不在,先别跑一趟"
@@ -706,6 +713,12 @@ node server/src/index.js
 ```
 
 `openHint` / `closedHint` 是显示在卡片上的一句话,按学校习惯改。
+
+**删掉一扇门**:从 `doors.json` 里删掉那一段,重启服务即可。
+服务端会把数据库里已经不登记的门一并清掉(`[db] 已移除登记表中不存在的门: …`),
+看板上的那扇门也就没了 —— 只改配置不重启是不生效的。
+
+**加一扇门**:加一段就行,`deviceId` 必须和 HA 那边发消息用的主题后缀一模一样。
 
 ---
 

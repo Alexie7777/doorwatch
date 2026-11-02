@@ -15,11 +15,12 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadTemplates, loadAutomationTemplates } from './ha-templates.mjs';
+import { loadTemplates, loadAutomationTemplates, loadBatteryTemplate } from './ha-templates.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const OUT = path.join(ROOT, 'tools', '.ha-templates.json');
 const OUT_AUTO = path.join(ROOT, 'tools', '.ha-automations.json');
+const OUT_BATTERY = path.join(ROOT, 'tools', '.ha-battery.json');
 
 const { templates, source } = loadTemplates(ROOT);
 
@@ -61,3 +62,36 @@ for (const f of fuses) {
   console.log('');
 }
 console.log(`已写入 ${OUT_AUTO}`);
+
+// 电量上报那条自动化的模板也导出 —— 它同样是 HA 会执行到的 Jinja
+const battery = loadBatteryTemplate(ROOT);
+fs.writeFileSync(OUT_BATTERY, JSON.stringify(battery, null, 2), 'utf8');
+console.log('');
+if (battery) {
+  console.log(`── 电量上报自动化: ${battery.alias ?? battery.id}`);
+  for (const [k, v] of Object.entries(battery.variables ?? {})) {
+    console.log(`   variables.${k}(${v.length} 字符):`);
+    console.log(
+      v
+        .split('\n')
+        .map((l, i) => `     ${i + 1}| ${l}`)
+        .join('\n'),
+    );
+  }
+  if (battery.guard) {
+    console.log(`   guard(${battery.guard.length} 字符):`);
+    console.log(
+      battery.guard
+        .split('\n')
+        .map((l, i) => `     ${i + 1}| ${l}`)
+        .join('\n'),
+    );
+  }
+  if (battery.payload) {
+    console.log(`   payload(${battery.payload.length} 字符): ${battery.payload}`);
+  }
+} else {
+  console.log('── 没找到电量上报自动化');
+}
+console.log('');
+console.log(`已写入 ${OUT_BATTERY}`);

@@ -9,10 +9,11 @@
 #    新版 HA 里 `service:` 已经被 `action:` 取代,老的 `platform:` 触发器
 #    写法也会弹弃用警告 —— 与其将来再改,不如一步到位。
 #
-#  ★ 三条自动化:
+#  ★ 四条自动化:
 #    1. 状态变化 → 立刻推给 doorwatch(门一开,看板马上变)
 #    2. 每分钟体检 → 刷新模板 + 推状态和心跳;读不到就立刻推 offline
 #    3. HA 启动 → 补发一次
+#    4. 门磁电量 → 每半小时把电量推给 doorwatch(看板显示电量徽章)
 #
 #  ★ 这里出现的 sensor.xxx 全是 templates.yaml 里定义的模板实体,
 #    名字固定,你不用改。
@@ -225,13 +226,16 @@
 #   (ESP32 方案里传感器一断电心跳立刻停,不需要这条;
 #    蓝牙方案没有那个信号,只能靠电量。)
 #
-#  xiaomi_miot 的电量是**属性**(battery_level),不是独立实体 ——
-#  所以用 state_attr() 取。有些集成会另外暴露 sensor.xxx_battery,
-#  那种就去掉 state_attr() 直接盯那个实体。
+# ★ 电量到底在哪?两种可能,这里挨个试:
+#   ① 主实体的 battery_level 属性
+#      xiaomi_miot 默认会把它作为标准属性挂到该设备的所有实体上
+#   ② 独立的 sensor.<设备>_battery_level 实体
+#      有些版本/型号把每个 MIoT 属性都做成独立实体
+#   两个都拿不到 → 发 none → 服务端拒收 → 看板显示"不知道"(不撒谎)
 #
-#  ★ 发电量**不会**刷新 doorwatch 的心跳,服务端认得出来:
-#    电量是"顺便报一下的",不能证明"门状态刚刚读到过"。
-#    一台没电的设备要是还在报电量,看板必须继续显示「状态未知」。
+# ★ 发电量**不会**刷新 doorwatch 的心跳,服务端认得出来:
+#   电量是"顺便报一下的",不能证明"门状态刚刚读到过"。
+#   一台没电的设备要是还在报电量,看板必须继续显示「状态未知」。
 # ---------------------------------------------------------------------
 - id: doorwatch_it_office_battery
   alias: "门磁电量 → doorwatch(IT 办公室)"
@@ -241,22 +245,32 @@
     # 每半小时报一次(电池不会突然没电,不用更勤)
     - trigger: time_pattern
       minutes: "/30"
-    # 电量一有变化就立刻报
-    - trigger: numeric_state
+    # 门一开一关也顺带报一次 —— 有人活动的时候把最新电量带出去
+    # (用 state 而不是 numeric_state: 万一电量不在属性上,
+    #  numeric_state 的 attribute 会找不到,这条触发器就永远不响)
+    - trigger: state
       entity_id: binary_sensor.isa_dw2hl_b95b_magnet_sensor
-      attribute: battery_level
-      below: 100
   actions:
+    - variables:
+        # ★ 一次算完,后面只管用这个字符串。
+        #   为什么不在发的时候才转数字:模板渲染出来的到底是数字还是字符串,
+        #   取决于 HA 那边带不带 parse_result —— 与其赌它,不如一开始就只产出字符串。
+        #   取不到 / 不像 0-100 的数 → 产 'none',服务端会拒收,看板显示"不知道"。
+        battery_payload: >
+          {% set a = state_attr('binary_sensor.isa_dw2hl_b95b_magnet_sensor', 'battery_level') %}
+          {% set b = states('sensor.isa_dw2hl_b95b_battery_level') %}
+          {% set c = states('sensor.isa_dw2hl_b95b_battery') %}
+          {% set raw = a if a is not none else (b if b not in ['unknown', 'unavailable'] else c) %}
+          {% set num = raw | float(none) %}
+          {{ (num | int) if num is not none and num >= 0 and num <= 100 else 'none' }}
     - if:
         - condition: template
-          value_template: >
-            {% set b = state_attr('binary_sensor.isa_dw2hl_b95b_magnet_sensor', 'battery_level') %}
-            {{ b is not none and b is number }}
+          value_template: "{{ (battery_payload | string) != 'none' }}"
       then:
         - action: mqtt.publish
           data:
             topic: "doorwatch/it-office-door/battery"
-            payload: "{{ state_attr('binary_sensor.isa_dw2hl_b95b_magnet_sensor', 'battery_level') }}"
+            payload: "{{ battery_payload }}"
             qos: 1
             retain: true
 

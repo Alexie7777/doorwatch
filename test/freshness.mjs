@@ -170,6 +170,32 @@ try {
   const other = getDoorByDevice(otherDevice);
   check('重放不会凭空写出时间戳', other.battery_at == null);
   check('★ 没有可信时间戳就不显示电量', effectiveBattery(other, t0 + 410_000) === null);
+
+  // --- 10. 登记表里删掉的门,数据库里也要真的删掉 ---
+  // 以前 syncRegistry 只做 upsert,于是"从 doors.json 里删掉一扇门"根本不生效:
+  // 看板会一直显示那扇已经不存在的门,而且它永远停在"状态未知"。
+  console.log('\n[test] 登记表清理');
+  syncRegistry([
+    {
+      id: 'it-office',
+      name: 'IT 办公室',
+      location: 'A512',
+      deviceId: DEVICE,
+      openHint: '',
+      closedHint: '',
+    },
+  ]);
+  check('登记表里没有的门被移出了数据库', getDoorByDevice(otherDevice) === null);
+  check('还在登记表里的门留着', getDoorByDevice(DEVICE) !== null);
+  check('位置跟着登记表更新了', getDoorByDevice(DEVICE).location === 'A512');
+  check(
+    '★ 同步登记表不会覆盖运行时状态(不会被冲成 unknown)',
+    getDoorByDevice(DEVICE).state === 'closed',
+  );
+
+  // 登记表为空(配置文件写坏了)时,不能把已经登在册的门全清空。
+  syncRegistry([]);
+  check('★ 登记表为空时不清空数据库', getDoorByDevice(DEVICE) !== null);
 } catch (err) {
   failures++;
   console.error(`\n❌ 测试异常: ${err.stack}`);

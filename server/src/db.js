@@ -78,6 +78,19 @@ export function getDb() {
 /**
  * 同步登记表。只写静态档案字段,绝不覆盖运行时状态,
  * 否则每次重启服务都会把"门开着"冲成 unknown。
+ *
+ * ★ 登记表里删掉的门,数据库里也要删掉。
+ *   上面那段是 upsert,光 upsert 不会碰已经存在的行 ——
+ *   于是"从 doors.json 里删掉一扇门"这件事根本不会生效:
+ *   看板会一直显示那扇已经不存在的门,而且它永远停在"状态未知"。
+ *   (实测踩过:配置里只剩 IT 办公室,看板上还是三扇。)
+ *
+ *   events 表没有外键,历史记录留着不会碍事 —— 万一以后把那扇门加回来,
+ *   今天的开关次数还能接上。
+ *
+ * ★ 登记表为空的时候**不删**:
+ *   配置文件写坏了、路径写错了,不该把已经登在册的门全清空。
+ *   (而且 doors.js 那边本来就会因为"门禁配置为空"直接拒绝启动。)
  */
 export function syncRegistry(doors) {
   const now = Date.now();
@@ -94,6 +107,21 @@ export function syncRegistry(doors) {
   `);
   for (const d of doors) {
     stmt.run(d.id, d.name, d.location, d.deviceId, d.openHint, d.closedHint, now);
+  }
+
+  if (doors.length > 0) {
+    const ids = doors.map((d) => d.id);
+    const placeholders = ids.map(() => '?').join(',');
+    const stale = getDb()
+      .prepare(`SELECT id, name FROM doors WHERE id NOT IN (${placeholders})`)
+      .all(...ids);
+    if (stale.length > 0) {
+      const del = getDb().prepare('DELETE FROM doors WHERE id = ?');
+      for (const s of stale) {
+        del.run(s.id);
+        console.log(`[db] 已移除登记表中不存在的门: ${s.name}(${s.id})`);
+      }
+    }
   }
 }
 

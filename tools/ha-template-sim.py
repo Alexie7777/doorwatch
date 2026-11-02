@@ -25,6 +25,7 @@
     node tools/dump-ha-templates.mjs
     python tools/ha-template-sim.py        # 退出码 0 = 全部场景都渲染正常
 """
+import ast
 import datetime as dt
 import json
 import pathlib
@@ -39,10 +40,12 @@ except ImportError:
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 JSON_PATH = ROOT / "tools" / ".ha-templates.json"
 JSON_AUTO_PATH = ROOT / "tools" / ".ha-automations.json"
+BATTERY_JSON_PATH = ROOT / "tools" / ".ha-battery.json"
 
 ENTITY = "binary_sensor.isa_dw2hl_b95b_magnet_sensor"
 READABLE = "binary_sensor.doorwatch_it_office_door_readable"
 STATE_ENTITY = "sensor.doorwatch_it_office_door_state"
+SEPARATE_BATTERY = "sensor.isa_dw2hl_b95b_battery_level"
 
 
 class LoggingUndefined(jinja2.Undefined):
@@ -55,10 +58,11 @@ class LoggingUndefined(jinja2.Undefined):
 class State:
     """模拟 HA 的 TemplateState(继承 core.State)。"""
 
-    def __init__(self, entity_id, state, last_updated, last_reported=None):
+    def __init__(self, entity_id, state, last_updated, last_reported=None, attributes=None):
         self.entity_id = entity_id
         self.state = state
         self.last_updated = last_updated
+        self.attributes = attributes or {}
         if last_reported is not None:
             self.last_reported = last_reported
 
@@ -124,6 +128,36 @@ class States:
         return st.state if st is not None else "unknown"
 
 
+def state_attr(mapping, entity_id, attr):
+    """对齐 helpers/template/states.py 的 state_attr()。
+
+    实体不存在 → None;属性不存在 → None。
+    """
+    st = mapping.get(entity_id)
+    if st is None:
+        return None
+    return getattr(st, "attributes", {}).get(attr)
+
+
+def parse_result(result):
+    """对齐 helpers/template/__init__.py 的 _parse_result()。
+
+    HA 渲染完模板后会用 literal_eval 把结果转回原生类型:
+      "87"   → 87(int)      "87.0" → 87.0(float)
+      "True" → True         "none" → "none"(literal_eval 失败,原样返回)
+      ""     → None
+    脚本里的 variables 步骤用的就是这条路径 ——
+    所以「变量到底是数字还是字符串」不是我们能想当然的事。
+    """
+    result = result.strip()
+    if result == "":
+        return None
+    try:
+        return ast.literal_eval(result)
+    except (ValueError, SyntaxError):
+        return result
+
+
 def parse_datetime(value):
     if not isinstance(value, str):
         return None
@@ -178,6 +212,7 @@ def result_as_boolean(result):
 def render_raw(tpl_text, mapping):
     env = make_env()
     env.globals["states"] = States(mapping)
+    env.globals["state_attr"] = lambda entity_id, attr: state_attr(mapping, entity_id, attr)
     return env.from_string(tpl_text).render()
 
 
@@ -450,6 +485,111 @@ def fuse_scenarios():
     return failures
 
 
+def battery_from_disk():
+    """读 tools/.ha-battery.json —— 电量上报那条自动化的模板。"""
+    if not BATTERY_JSON_PATH.exists():
+        return None
+    try:
+        return json.loads(BATTERY_JSON_PATH.read_text(encoding="utf8"))
+    except json.JSONDecodeError:
+        return None
+
+
+def battery_scenarios():
+    """把电量上报那条自动化的模板在几种场景下跑一遍。返回问题数。
+
+    ★ 为什么电量也要仿真:
+      这段 Jinja 写错的时候,HA **不报错** —— 自动化安静地什么都不发,
+      现象只是「看板没有电量徽章」。查起来比保险丝不通过还费劲,
+      因为没有任何错误信息指向它。
+    """
+    b = battery_from_disk()
+    if not b:
+        print("⚠️ 没读到电量模板,先跑 node tools/dump-ha-templates.mjs")
+        return 1
+
+    variables = b.get("variables") or {}
+    var_tpl = variables.get("battery_payload")
+    guard_tpl = b.get("guard")
+    payload_tpl = b.get("payload")
+    if not var_tpl or not guard_tpl:
+        print("❌ 电量模板不完整(variables.battery_payload / guard 缺一个)")
+        return 1
+
+    n = dt.datetime.now(dt.timezone.utc)
+    fresh = n - dt.timedelta(seconds=10)
+
+    def mapping(attr=None, separate=None):
+        m = {
+            ENTITY: State(
+                ENTITY,
+                "off",
+                fresh,
+                fresh,
+                {"battery_level": attr} if attr is not None else {},
+            )
+        }
+        if separate is not None:
+            m[SEPARATE_BATTERY] = State(SEPARATE_BATTERY, separate, fresh, fresh)
+        return m
+
+    # (说明, 输入, 期望发出去的 payload;None = 不该发)
+    cases = [
+        ("电量在主实体的属性上(87)", mapping(attr=87), "87"),
+        ("电量是独立实体(87)", mapping(separate="87"), "87"),
+        ("属性和独立实体都没有", mapping(), None),
+        ("独立实体还是 unknown", mapping(separate="unknown"), None),
+        ("电量为 0(电池耗尽)", mapping(attr=0), "0"),
+        ("电量 3(低电量)", mapping(attr=3), "3"),
+        ("电量 100(满电)", mapping(attr=100), "100"),
+        ("独立实体的值不是数字", mapping(separate="abc"), None),
+        ("属性和独立实体都有,以属性为准", mapping(attr=55, separate="87"), "55"),
+    ]
+
+    failures = 0
+    print("=" * 76)
+    print(f"电量上报({b.get('alias') or b.get('id')})")
+    print("-" * 76)
+
+    for label, m, expected in cases:
+        try:
+            # ① variables 步骤:渲染 → parse_result
+            rendered = render_raw(var_tpl, m)
+            value = parse_result(rendered)
+
+            # ② if 步骤:模板里有 battery_payload 这个变量
+            env = make_env()
+            env.globals["states"] = States(m)
+            env.globals["state_attr"] = lambda e, a: state_attr(m, e, a)
+            env.globals["battery_payload"] = value
+            guard_out = env.from_string(guard_tpl).render().strip()
+            passes = guard_out.lower() in ("true", "yes", "on", "1")
+
+            # ③ then 步骤:mqtt.publish 的 payload
+            if passes and payload_tpl:
+                env2 = make_env()
+                env2.globals["states"] = States(m)
+                env2.globals["state_attr"] = lambda e, a: state_attr(m, e, a)
+                env2.globals["battery_payload"] = value
+                sent = env2.from_string(payload_tpl).render().strip()
+            else:
+                sent = None
+
+            ok = sent == expected
+            mark = "✓" if ok else "✗"
+            print(f"  {mark} {label:<32} 变量={value!r:<10} → 发 {sent!r}")
+            if not ok:
+                print(f"       ✗ 预期 {expected!r}")
+                failures += 1
+        except Exception as exc:  # noqa: BLE001
+            print(f"  ✗ {label:<32} → {type(exc).__name__}: {exc}")
+            print("       ✗ 电量模板不应该抛异常(否则自动化整个挂掉)")
+            failures += 1
+
+    print("")
+    return failures
+
+
 def main():
     if not JSON_PATH.exists():
         print("❌ 找不到 tools/.ha-templates.json,先跑: node tools/dump-ha-templates.mjs")
@@ -485,6 +625,7 @@ def main():
 
     failures += legacy_regressions()
     failures += fuse_scenarios()
+    failures += battery_scenarios()
 
     print("=" * 76)
     if failures:

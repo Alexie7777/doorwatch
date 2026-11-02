@@ -64,6 +64,73 @@ export function loadTemplates(root) {
 }
 
 /**
+ * 读 ha/automations.yaml,抽出「电量上报」那条自动化的模板。
+ *
+ * 为什么单独抽:
+ *   电量取值有个坑 —— 它可能不在主实体的属性上,而是一个独立实体。
+ *   这段 Jinja 一旦写错,现象是「看板永远没有电量」,但 HA 那边**不报错**:
+ *   自动化安静地什么都不发,查起来比保险丝不通过还费劲。
+ *   所以也拿离线仿真器盯住(tools/ha-template-sim.py)。
+ *
+ * @returns {{id: string|null, alias: string|null, variables: Record<string,string>,
+ *            guard: string|null, payload: string|null}|null}
+ */
+export function loadBatteryTemplate(root) {
+  const yamlPath = path.join(root, 'ha', 'automations.yaml');
+  let YAML;
+  try {
+    YAML = require('yaml');
+  } catch {
+    return null;
+  }
+  let doc;
+  try {
+    doc = YAML.parse(fs.readFileSync(yamlPath, 'utf8'));
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(doc)) return null;
+
+  for (const auto of doc) {
+    const actionsText = JSON.stringify(auto?.actions ?? []);
+    if (!/\/battery"/.test(actionsText)) continue;
+
+    const variables = {};
+    let guard = null;
+    let payload = null;
+
+    for (const action of auto?.actions ?? []) {
+      // variables 这一步:HA 会先把模板渲染成字符串,再用它当变量
+      if (action?.variables && typeof action.variables === 'object') {
+        for (const [k, v] of Object.entries(action.variables)) {
+          if (typeof v === 'string') variables[k] = v;
+        }
+      }
+      // if 里的模板条件
+      for (const cond of [action?.if].flat().filter(Boolean)) {
+        if (cond?.condition === 'template' && typeof cond.value_template === 'string') {
+          guard = cond.value_template;
+        }
+      }
+      // then 里 mqtt.publish 的 payload
+      for (const act of [action?.then].flat().filter(Boolean)) {
+        const data = act?.data ?? {};
+        if (typeof data?.payload === 'string') payload = data.payload;
+      }
+    }
+
+    return {
+      id: auto.id ?? null,
+      alias: auto.alias ?? null,
+      variables,
+      guard,
+      payload,
+    };
+  }
+  return null;
+}
+
+/**
  * 读 ha/automations.yaml,抽出每条自动化里的「模板条件」(保险丝)。
  *
  * 为什么需要它:

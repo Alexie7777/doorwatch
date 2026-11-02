@@ -283,9 +283,14 @@ node tools/doctor.mjs --doorwatch https://<你的服务器>:8443 --insecure \
 {
   "id": "it-office",
   "name": "IT 办公室",
+  "location": "A512",
   "deviceId": "it-office-door"
 }
 ```
+
+> `location` 就是看板上显示的位置,按你们学校实际写(`A512` 这种房间号就行)。
+> **只有实际接了传感器的门才登记** —— 登记了却没有传感器,看板就会一直显示
+> 「状态未知」。删掉不用的门,重启服务端即可(它会把数据库里的旧记录一并清掉)。
 
 `ha/automations.yaml` 里发出去的主题:
 
@@ -333,11 +338,32 @@ docker compose logs -f doorwatch
 | 5 | 网关恢复供电 | 看板自动恢复真实状态 | ≤ 1 分钟 |
 | 6 | 等一次电量上报自动化触发 | 看板上门磁旁边出现「电量 XX%」徽章 | ≤ 30 分钟 |
 
-> 用例 6 没出现徽章?先确认 `ha/automations.yaml` 的第 4 条自动化
-> (「门磁电量 → doorwatch(IT 办公室)」)已经加载,并且**服务端是新版**
-> (旧服务端不订阅 `battery` 主题,收到就丢)。
-> 用 `node tools/doctor.mjs --doorwatch … --insecure` 看「服务端」那一环里
-> 有没有 `已订阅 doorwatch/+/{state,status,heartbeat,battery}`。
+> 用例 6 没出现徽章?按顺序查这三样:
+>
+> ① **服务端是新版吗**(旧服务端不订阅 `battery` 主题,收到就丢):
+> ```bash
+> node tools/doctor.mjs --doorwatch https://<你的服务器>:8443 --insecure
+> ```
+> 看「服务端」那一环有没有 `已订阅 doorwatch/+/{state,status,heartbeat,battery}`。
+>
+> ② **HA 那条自动化加载了吗**:自动化页面应该看到「门磁电量 → doorwatch(IT 办公室)」,
+> 一共 4 条。少了就是没贴进去。
+>
+> ③ **电量到底在哪个实体上**。HA 设置 → 工具 → 模板,粘这一行:
+> ```jinja
+> {% for id in states | list if 'isa_dw2hl' in id %}{{ id }} = {{ states[id].state }}
+> {% endfor %}
+> ```
+> 会把这个设备的所有实体列出来。电量要么是主实体上的 `battery_level` 属性,
+> 要么是一个独立的 `sensor.isa_dw2hl_b95b_battery_level` 实体 ——
+> 本仓库的自动化**两种都认**,所以只要列表里能看到电量,就一定能取到。
+>
+> ④ 还不出的话,直接看服务端有没有收到:
+> ```bash
+> cd doorwatch/deploy && docker compose logs -f doorwatch | grep 电量
+> ```
+> 看到 `[mqtt] it-office-door 电量 -> 87%` 就说明服务端这边完全正常,
+> 问题在 HA 那一侧。
 
 ### 用例 4 没过?先别慌,分清是哪种"死"
 
