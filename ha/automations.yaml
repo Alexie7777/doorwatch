@@ -67,16 +67,37 @@
 #    (HA 源码:update_entity → async_update_ha_state(force_refresh=True)
 #      → async_device_update() → TemplateEntity.async_update() → 重新渲染模板)
 #
-#    判断"还活着吗"用了两个条件,必须同时成立:
-#    ① readable 说能读到
-#    ② readable 这个模板自己刚被刷新过(120 秒内)
-#    ② 是保险丝:万一 update_entity 因为实体名写错而失败,
-#    模板值会一直停在老样子 —— 那时候宁可报"未知",也绝不能报"还活着"。
+#  ★★★ 判断"还活着吗"的三道条件,必须同时成立: ★★★
 #
-#    ★ 这里用 last_reported 而不是 last_updated:
-#      模板重算之后如果算出来的值没变(还是 on 还是 on),
-#      HA 走的是"提前返回"分支,last_updated 不动、只有 last_reported 动。
-#      用 last_updated 做保险丝的话,保险丝会永远失效 → 每分钟都报离线。
+#    ① fresh  —— 原始门磁的 last_reported 在 STALE_SECONDS(180 秒)之内
+#    ② readable 说能读到(binary_sensor.doorwatch_it_office_door_readable == 'on')
+#    ③ 状态模板给出了明确答案(OPEN / CLOSED,不是 UNKNOWN)
+#
+#    ① 是**新加的**,也是这次线上事故的直接原因,必须看懂:
+#
+#      ★ 模板实体的 last_reported 是不推进的,绝对不能拿它判死活。
+#
+#      HA 源码(homeassistant/helpers/event.py,
+#      TrackTemplateResultInfo._render_template_if_ready):
+#
+#          if result == last_result and template in self._last_result:
+#              return True          # ← 结果没变,连 update 都不产生
+#
+#      结果没变 → 不产生 update → 回调不跑 → async_write_ha_state() 不跑
+#      → 状态压根没被写进 state machine → **last_reported 永远不动**。
+#
+#      所以模板实体的 last_reported 冻结在「值最后一次变化」的那一刻。
+#      拿它算新鲜度,必然在两分钟后变成"过期" → 保险丝永远不通过
+#      → 每分钟都推 offline → 看板永远显示"状态未知"。
+#
+#      ★ 而**原始门磁**不一样:xiaomi_miot 每轮轮询都会写一次状态,
+#        值没变时 HA 走 async_set_internal 的"提前返回"分支,
+#        **只更新 last_reported**。所以原始门磁的 last_reported 是真在推进的
+#        (实测每次 doctor 跑起来都是"几秒前")—— 这才是可信的存活信号。
+#
+#      ★★ 顺便记住:**模板实体的「值」是准的,只是它的时间戳不准。**
+#         值每分钟被 update_entity 重算一次,只是"没变就不写回去"。
+#         所以 ② ③ 可以放心用**值**来判断,只有「时间戳」不能用。
 #
 #    三条路径各自独立地保护"不许撒谎"这条底线:
 #    · 上面的状态变化自动化 → 推 UNKNOWN → doorwatch 立刻打回未知
@@ -103,14 +124,15 @@
     - if:
         - condition: template
           value_template: >
-            {% set r = states.binary_sensor.doorwatch_it_office_door_readable %}
-            {% set ts = r.last_reported | default(r.last_updated, true) %}
-            {% set ok = false %}
-            {% if r is not none and r.state == 'on' and ts is defined and ts is not none
-                   and ts.year is defined %}
-              {% set ok = (as_timestamp(now()) - as_timestamp(ts)) < 120 %}
+            {% set raw = states.binary_sensor.isa_dw2hl_b95b_magnet_sensor %}
+            {% set ts = raw.last_reported | default(raw.last_updated, true) %}
+            {% set fresh = false %}
+            {% if raw is not none and ts is defined and ts is not none and ts.year is defined %}
+              {% set fresh = (as_timestamp(now()) - as_timestamp(ts)) < 180 %}
             {% endif %}
-            {{ ok }}
+            {% set r = states.binary_sensor.doorwatch_it_office_door_readable %}
+            {% set actual = states('sensor.doorwatch_it_office_door_state') %}
+            {{ fresh and r is not none and r.state == 'on' and actual in ['OPEN', 'CLOSED'] }}
       then:
         - action: mqtt.publish
           data:
@@ -152,14 +174,15 @@
     - if:
         - condition: template
           value_template: >
-            {% set r = states.binary_sensor.doorwatch_it_office_door_readable %}
-            {% set ts = r.last_reported | default(r.last_updated, true) %}
-            {% set ok = false %}
-            {% if r is not none and r.state == 'on' and ts is defined and ts is not none
-                   and ts.year is defined %}
-              {% set ok = (as_timestamp(now()) - as_timestamp(ts)) < 120 %}
+            {% set raw = states.binary_sensor.isa_dw2hl_b95b_magnet_sensor %}
+            {% set ts = raw.last_reported | default(raw.last_updated, true) %}
+            {% set fresh = false %}
+            {% if raw is not none and ts is defined and ts is not none and ts.year is defined %}
+              {% set fresh = (as_timestamp(now()) - as_timestamp(ts)) < 180 %}
             {% endif %}
-            {{ ok }}
+            {% set r = states.binary_sensor.doorwatch_it_office_door_readable %}
+            {% set actual = states('sensor.doorwatch_it_office_door_state') %}
+            {{ fresh and r is not none and r.state == 'on' and actual in ['OPEN', 'CLOSED'] }}
       then:
         - action: mqtt.publish
           data:

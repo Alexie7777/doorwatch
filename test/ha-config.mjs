@@ -98,6 +98,48 @@ check('automations.yaml 的保险丝用 last_reported', automationsText.includes
 check('templates.yaml 没有把 last_updated 当唯一判据',
   !/as_timestamp\(src\.last_updated\)/.test(templatesText));
 
+console.log('\n[test] 保险丝的存活判据(模板实体的时间戳是冻结的)');
+/**
+ * ★ 这组断言挡的是 2026-11 那次线上事故。
+ *
+ *   保险丝(自动化里「传感器还活着吗」那段 Jinja)曾经拿
+ *   **模板实体**的 last_reported 判死活。
+ *   而 HA 只在渲染结果**变化**时才把状态写回 state machine:
+ *       helpers/event.py → TrackTemplateResultInfo._render_template_if_ready
+ *           if result == last_result and template in self._last_result:
+ *               return True       # ← 结果没变,连 update 都不产生
+ *   结果没变 → 不写状态 → **last_reported 永远不动**。
+ *
+ *   于是保险丝两分钟后必然判「过期」→ 每分钟推 offline
+ *   → 看板永远显示「状态未知」,而门磁明明好好的。
+ *
+ *   原始门磁就不一样:xiaomi_miot 每轮轮询都写一次状态,
+ *   值没变时 HA 走 async_set_internal 的「提前返回」分支,只更新 last_reported
+ *   —— 它的 last_reported 是真在推进的,那才是可信的存活信号。
+ */
+const fuseTemplates = [];
+for (const auto of automationsDoc ?? []) {
+  for (const action of auto?.actions ?? []) {
+    for (const cond of [action?.if].flat().filter(Boolean)) {
+      if (cond?.condition === 'template') fuseTemplates.push(cond.value_template ?? '');
+    }
+  }
+}
+check('能抠出自动化里的保险丝条件', fuseTemplates.length > 0, `${fuseTemplates.length} 条`);
+for (const fuse of fuseTemplates) {
+  check('★ 保险丝不拿模板实体的 last_reported 判死活',
+    !/r\.last_reported/.test(fuse),
+    '模板实体的 last_reported 不推进,用它会让保险丝永远不通过');
+  check('★ 保险丝用原始门磁的 last_reported 判死活',
+    /raw\.last_reported/.test(fuse));
+  check('★ 保险丝看的是可读性模板的**状态**(on/off),不是它的时间戳',
+    /r\.state\s*==\s*'on'/.test(fuse));
+  check('★ 保险丝要求状态模板给出明确答案(OPEN/CLOSED)',
+    /actual in \['OPEN', 'CLOSED'\]/.test(fuse));
+  check('★ 保险丝的算式在 {% if %} 的 body 里(不会被短路跳过)',
+    /{% if [\s\S]*as_timestamp/.test(fuse) && /%}\s*{% set fresh/.test(fuse));
+}
+
 console.log('\n[test] deviceId 三处对齐');
 const doorIds = new Set((doorsDoc?.doors ?? []).map((d) => d.deviceId));
 check('config/doors.json 里登记了 deviceId', doorIds.size > 0, [...doorIds].join(', '));

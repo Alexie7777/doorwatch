@@ -60,7 +60,9 @@ node tools/doctor.mjs \
 | 检查 | 它做什么 | 什么时候看它 |
 |---|---|---|
 | **现场渲染** | 把本仓库 `ha/templates.yaml` 里的模板**直接 POST 给 HA 的 `/api/template`**,看它此刻渲染成什么 | **装配置之前就该跑一次** —— 能在改 HA 配置之前就确认这份模板在你这台 HA 上不会炸 |
-| **错误日志** | 抓 HA 的 `/api/error_log`,把跟 doorwatch 有关的报错原文打出来 | 实体显示 `unavailable` 时,它会直接告诉你**是哪一行模板抛的异常**,不用再去 HA 网页里翻日志 |
+| **保险丝求值** | 把 `ha/automations.yaml` 里那段「传感器还活着吗」的 Jinja 在 HA 上**算一遍**,直接告诉你通过还是不通过 | 看板一直显示「状态未知」时**先看这个** —— 不通过 = 每分钟都推 offline,看板永远未知 |
+| **错误日志** | 抓 HA 的 `/api/error_log`,把跟 doorwatch 有关的报错原文打出来 | 实体显示 `unavailable` 时,它会直接告诉你**是哪一行模板抛的异常** |
+| **时间戳对照** | 把原始门磁、状态模板、可读性模板的 `last_reported` 并排列出来 | 想知道「哪个时间戳能用来判死活」—— 原始门磁的在推进,模板实体的**冻结着** |
 
 > token 在 HA 里拿:**左下角头像 → 安全 → 长期访问令牌 → 创建令牌**。
 > HA 默认是 **http**,写成 https 的话工具会自己降级重试。
@@ -366,10 +368,12 @@ docker compose logs -f doorwatch
 | 现象 | 多半是 | 怎么查 |
 |---|---|---|
 | 看板一直是「状态未知」 | 模板实体没建起来 | HA 设置 → 工具 → 状态 搜 `doorwatch_it_office` |
+| 看板一直是「状态未知」 | **保险丝不通过**(每分钟都推 offline) | 跑 `node tools/doctor.mjs --ha … --token …`,看「保险丝」那一行是「通过」还是「不通过」 |
 | 看板一直是「状态未知」 | 实体名写错了 | `node tools/ha-probe.mjs` 看真实 entity_id |
 | 看板一直是「状态未知」 | HA 版本太老,没有 `last_reported` | 设置 → 工具 → 模板,跑 `{{ states.binary_sensor.你的门磁.last_reported }}`,报错就是太老,升级 HA |
 | 模板实体 = **`unavailable`** | 模板渲染抛了 `TemplateError` | 跑 `node tools/doctor.mjs --ha … --token …`,它会打出 HA 的报错原文和错误日志 |
 | 模板永远输出 `UNKNOWN`,哪怕门开着 | 用了 `src in ['on','off']` | `src` 是**状态对象**,`State.__eq__` 比的是 entity_id → 恒为 False。要比文本必须写 `src.state in ['on','off']` |
+| **保险丝永远不通过**(HA 里模板值是对的,看板却是未知) | 保险丝用了**模板实体**的 `last_reported` | 模板实体的 `last_reported` **不推进**(HA 只在渲染结果变化时才写回状态)。判死活只能用**原始门磁**的 `last_reported` |
 | 看板不动,但 HA 里状态对 | MQTT 没通 | HA → 集成 → MQTT → 配置,看 broker 地址;服务端日志里看有没有「传感器接入」 |
 | 服务端日志刷「收到未登记设备」 | deviceId 对不上 | 比对 `config/doors.json` 和 `automations.yaml` 里的主题后缀 |
 | 状态反了(开门显示关) | 方向开关 | `templates.yaml` 里 `DOOR_ON_MEANS_OPEN` 改 `false` |

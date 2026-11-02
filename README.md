@@ -161,11 +161,14 @@ node tools/doctor.mjs --doorwatch https://<你的服务器>:8443 --insecure \
   ✅ IT 办公室门  状态=门开着  在线=是  最后收到 8 秒前
 
 [3/5] HA 侧模板实体
-  ✅ 门状态模板 = OPEN
+  ✅ 门状态模板 = CLOSED
   ✅ 可读性模板 = on  (传感器在正常上报)
-  · 原始门磁实体 = off  last_reported 12 秒前
-  ✅ 现场渲染 doorwatch_it_office_door_state  → OPEN
+  · 原始门磁实体 = off  last_reported 12 秒前  last_updated 12 秒前
+  · 状态模板实体 = CLOSED  last_reported 30 分钟前  last_updated 30 分钟前
+  · 可读性模板实体 = on  last_reported 30 分钟前  last_updated 30 分钟前
+  ✅ 现场渲染 doorwatch_it_office_door_state  → CLOSED
   ✅ 现场渲染 doorwatch_it_office_door_readable  → on
+  ✅ 保险丝(每分钟体检 → doorwatch(IT 办公室))  → 通过(会推状态 + 心跳)
   ✅ HA 错误日志里没有模板相关的报错
 
 [4/5] 主题与 deviceId 对齐
@@ -177,12 +180,14 @@ node tools/doctor.mjs --doorwatch https://<你的服务器>:8443 --insecure \
   ✅ 链路已通 —— 门开着的话,看板会显示「门开着」。
 ```
 
-带上 `--ha` 之后,体检会多做两件事:
+带上 `--ha` 之后,体检会多做四件事:
 
 | 检查 | 它做什么 | 为什么有用 |
 |---|---|---|
 | **现场渲染** | 把本仓库 `ha/templates.yaml` 里的模板直接 POST 给 HA 的 `/api/template` | **装配置之前**就能确认这份模板在你这台 HA 上不会炸;渲染失败还会把 HA 的报错原文带回来 |
+| **保险丝求值** | 把 `ha/automations.yaml` 里那段「传感器还活着吗」的 Jinja 在 HA 上**算一遍** | 看板一直显示「状态未知」时,先看这一行 —— 不通过就等于每分钟都推 offline |
 | **错误日志** | 抓 HA 的 `/api/error_log`,打出跟 doorwatch 有关的报错 | 实体显示 `unavailable` 时,直接告诉你**是哪一行模板抛的异常**,不用再去 HA 网页里翻 |
+| **时间戳对照** | 把原始门磁 / 状态模板 / 可读性模板的 `last_reported` 并排列出来 | 看清哪个时间戳能用来判死活 —— 原始门磁的在推进,**模板实体的冻结着** |
 
 不想用工具的话,手动确认也行:
 
@@ -809,11 +814,18 @@ node tools/doctor.mjs --doorwatch https://<服务器>:8443 --insecure \
 - **HA 里的模板实体显示 `unavailable`** → 模板渲染抛了 `TemplateError`。
   体检会把 HA 的报错原文和错误日志一起打出来;想自己看也可以去
   **设置 → 工具 → 调试**。成因和修法见
-  [`ha/README.md`](ha/README.md) 第四节的「模板层的两条硬规则」。
+  [`ha/README.md`](ha/README.md) 第四节的「模板层的硬规则」。
 - **HA 里的模板实体永远是 `UNKNOWN`,哪怕门明明开着** → 模板里写了
   `src in ['on','off']` 这类**拿状态对象跟字符串比**的写法(恒为 False),
   或者用了 `states('x').last_updated`(字符串形式拿不到时间戳)。
   同上,见 `ha/README.md` 第四节。
+- **HA 里模板值是对的(CLOSED)、看板却是「状态未知」** → **保险丝不通过**。
+  体检的「保险丝求值」那一行会直接告诉你通过还是不通过。
+  最常见的原因是保险丝拿**模板实体**的 `last_reported` 判死活 ——
+  而 HA 只在渲染结果**变化**时才把状态写回 state machine,
+  所以模板实体的 `last_reported` 是**冻结**的,两分钟后必然判「过期」。
+  判存活只能用**原始门磁**的 `last_reported`(那个才是真在推进的)。
+  详见 [`ha/README.md`](ha/README.md) 第四节的「硬规则三」。
 
 **Q:HA 报 "MQTT protocol migration failed"**
 新版本 HA 想把 MQTT 连接迁到协议 5,而内置的 broker(aedes)还不支持 MQTT 5。

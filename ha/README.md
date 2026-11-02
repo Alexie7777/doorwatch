@@ -442,22 +442,52 @@ states.binary_sensor.x.last_reported       # ✅ 时间戳要这么写
 (HA 源码:`update_entity` → `async_update_ha_state(force_refresh=True)`
 → `async_device_update()` → `TemplateEntity.async_update()` → 重新渲染模板。)
 
-这条自动化还带了第二道保险:除了看 `readable` 是不是 `on`,
-还看它**自己是不是刚被刷新过**(120 秒内)。
-万一实体名写错导致 `update_entity` 失效,模板值会一直停在老样子 ——
-那时候宁可报"未知",也绝不能报"还活着"。
+这条自动化还带了三道保险,必须**同时成立**才推状态+心跳,否则推 `offline`:
 
-> 这条保险丝也必须用 `last_reported`:
-> 模板重算之后如果算出来的值没变(还是 `on` 还是 `on`),
-> HA 走的是「提前返回」分支 —— `last_updated` 不动、只有 `last_reported` 动。
-> 用 `last_updated` 的话,保险丝会永远失效,每分钟都误报离线。
+| # | 条件 | 挡的是什么 |
+|---|---|---|
+| ① | 原始门磁的 `last_reported` 在 180 秒内 | 传感器真的还在上报 |
+| ② | `readable` 这个实体的**状态**是 `on` | 模板算出来的「读不到」 |
+| ③ | 状态模板给出的是 `OPEN`/`CLOSED`(不是 `UNKNOWN`) | 模板本身失灵 |
+
+#### ★★★ 硬规则三:保险丝绝对不能拿**模板实体**的时间戳判死活
+
+这一条踩过一次线上事故,记清楚:
+
+**模板实体的 `last_reported` 是不推进的。**
+
+HA 源码(`homeassistant/helpers/event.py`,
+`TrackTemplateResultInfo._render_template_if_ready`):
+
+```python
+if result == last_result and template in self._last_result:
+    return True          # ← 渲染结果没变,连 update 都不产生
+```
+
+结果没变 → 不产生 update → 回调不跑 → `async_write_ha_state()` 不跑
+→ 状态压根没被写进 state machine → **`last_reported` 永远不动**。
+
+于是模板实体的 `last_reported` 冻结在「值最后一次变化」的那一刻。
+拿它算新鲜度,必然在两分钟后变成「过期」→ 保险丝永远不通过
+→ 每分钟都推 `offline` → **看板永远显示「状态未知」**,
+而门磁明明好好的、每分钟都在上报。
+
+**原始门磁就不一样**:`xiaomi_miot` 每轮轮询都会写一次状态,
+值没变时 HA 走 `async_set_internal` 的「提前返回」分支 ——
+**只更新 `last_reported`**。所以它的 `last_reported` 是真在推进的,
+那才是可信的存活信号。
+
+> ★★ 顺带记住一个容易搞混的地方:
+>    **模板实体的「值」是准的,只是它的时间戳不准。**
+>    值每分钟被 `update_entity` 重算一次,只是「没变就不写回去」。
+>    所以 ② ③ 可以放心用**值**来判断,**只有时间戳不能用**。
 
 > 一句话:**三道防线,任何一道生效,看板都不会显示过期的开/关。**
 > ① 模板输出 `UNKNOWN` → 推给 doorwatch → 立刻打回未知
 > ② 「每分钟体检」推 `status: offline` → 立刻打回未知
 > ③ doorwatch 自己的心跳超时(180 秒)→ 兜底
 
-### ★★ 模板层的两条硬规则(各踩过一次,写下来免得再踩)
+### ★★ 模板层的另外两条硬规则(各踩过一次,写下来免得再踩)
 
 #### 规则一:`as_timestamp()` 必须放在 `{% if %}` 的 **body** 里
 

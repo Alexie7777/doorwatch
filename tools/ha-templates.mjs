@@ -62,3 +62,47 @@ export function loadTemplates(root) {
 
   return { templates: [], source: null };
 }
+
+/**
+ * 读 ha/automations.yaml,抽出每条自动化里的「模板条件」(保险丝)。
+ *
+ * 为什么需要它:
+ *   保险丝是判定「传感器还活着吗」的那段 Jinja。
+ *   它写对了没、在这台 HA 上算出来是 True 还是 False,
+ *   只有让 HA 自己算一遍才知道 —— 这就是 doctor 的「保险丝现场求值」。
+ *
+ * @returns {Array<{id: string, alias: string|null, fuse: string}>}
+ */
+export function loadAutomationTemplates(root) {
+  const yamlPath = path.join(root, 'ha', 'automations.yaml');
+  let YAML;
+  try {
+    YAML = require('yaml');
+  } catch {
+    return [];
+  }
+  let doc;
+  try {
+    doc = YAML.parse(fs.readFileSync(yamlPath, 'utf8'));
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(doc)) return [];
+
+  const out = [];
+  for (const auto of doc) {
+    for (const action of auto?.actions ?? []) {
+      const branches = [action?.if].flat().filter(Boolean);
+      for (const cond of branches) {
+        if (cond?.condition === 'template' && typeof cond.value_template === 'string') {
+          out.push({
+            id: auto.id ?? null,
+            alias: auto.alias ?? null,
+            fuse: cond.value_template,
+          });
+        }
+      }
+    }
+  }
+  return out;
+}

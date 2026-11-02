@@ -23,7 +23,7 @@ import path from 'node:path';
 import http from 'node:http';
 import https from 'node:https';
 import process from 'node:process';
-import { loadTemplates } from './ha-templates.mjs';
+import { loadTemplates, loadAutomationTemplates } from './ha-templates.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 
@@ -178,6 +178,37 @@ function age(ms) {
   return `${Math.round(h / 24)} 天前`;
 }
 
+/**
+ * 在 HA 上现场渲染一段模板。
+ *
+ * ★ HA 的 /api/template 有两种返回形态,两种都得认:
+ *     · {"result": "..."}   JSON
+ *     · "..."               纯文本
+ *   实测 2026.10 走的是**纯文本**那一支 —— 只认 JSON 的话,
+ *   明明渲染成功了,工具却会报「失败」,还会把渲染结果当成错误信息打出来。
+ *
+ * @returns {{ok: true, text: string} | {ok: false, error: string}}
+ */
+async function renderOnHa(haUrl, templateText, headers) {
+  const res = await postJson(`${haUrl}/api/template`, { template: templateText }, {
+    headers,
+    timeout: 15000,
+  });
+  if (res.status >= 200 && res.status < 300) {
+    const text = res.json && res.json.result !== undefined
+      ? String(res.json.result)
+      : String(res.body ?? '');
+    return { ok: true, text: text.trim() };
+  }
+  const msg = res.json?.message ?? String(res.body ?? '').slice(0, 400) ?? `HTTP ${res.status}`;
+  return { ok: false, error: String(msg).replace(/\s+/g, ' ').trim() };
+}
+
+/** HA 的模板结果怎么算「真」 */
+function isTruthy(text) {
+  return ['1', 'true', 'yes', 'on', 'enable', 'enabled'].includes(String(text).trim().toLowerCase());
+}
+
 function line(mark, text, extra = '') {
   console.log(`  ${mark} ${text}${extra ? `  ${extra}` : ''}`);
   if (mark === MARK.bad) problems += 1;
@@ -290,17 +321,33 @@ if (!args.ha) {
       line(MARK.ok, `可读性模板 = ${rd.state}`, rd.state === 'on' ? '(传感器在正常上报)' : '(读不到传感器)');
     }
 
-    const raw = map.get('binary_sensor.isa_dw2hl_b95b_magnet_sensor');
-    if (raw) {
-      line(MARK.info, `原始门磁实体 = ${raw.state}`,
-        `last_reported ${age(Date.parse(raw.last_reported ?? ''))}`);
+    // ---- 时间戳对照 ----
+    //  原始门磁的 last_reported 每轮轮询都在推进;
+    //  模板实体的 last_reported 是**冻结**的 ——
+    //  HA 只在渲染结果**变化**时才把状态写回 state machine,
+    //  结果没变就压根不写,时间戳自然也不动。
+    //  这两条并排一看,就知道「判死活」该用哪个时间戳。
+    const tsEntities = [
+      ['原始门磁实体', 'binary_sensor.isa_dw2hl_b95b_magnet_sensor'],
+      ['状态模板实体', 'sensor.doorwatch_it_office_door_state'],
+      ['可读性模板实体', 'binary_sensor.doorwatch_it_office_door_readable'],
+    ];
+    for (const [label, id] of tsEntities) {
+      const e = map.get(id);
+      if (!e) {
+        line(MARK.info, `${label} 不存在`, id);
+        continue;
+      }
+      line(MARK.info, `${label} = ${e.state}`,
+        `last_reported ${age(Date.parse(e.last_reported ?? ''))}`
+        + `  last_updated ${age(Date.parse(e.last_updated ?? ''))}`);
     }
 
     // ---- 现场渲染:把仓库里的模板直接 POST 给 HA 的 /api/template ----
     // 意义:不用「先改配置,再回头猜为什么炸」。
     // 这份模板在**这台** HA 上此刻会渲染成什么,直接问 HA 自己;
     // 渲染报错的话,HA 会把 TemplateError 原文还回来。
-    const { templates, source } = loadTemplates(ROOT);
+    const { templates } = loadTemplates(ROOT);
     if (!templates.length) {
       line(MARK.info, '拿不到仓库里的模板', '先跑 node tools/dump-ha-templates.mjs');
     } else {
@@ -310,30 +357,57 @@ if (!args.ha) {
           line(MARK.warn, `模板 ${label} 没有 state 字段`);
           continue;
         }
-        let res;
+        let out;
         try {
-          res = await postJson(`${args.ha}/api/template`, { template: t.state }, {
-            headers: haHeaders,
-            timeout: 15000,
-          });
+          out = await renderOnHa(args.ha, t.state, haHeaders);
         } catch (err) {
           line(MARK.bad, `现场渲染 ${label} 失败`, err.message);
           continue;
         }
-        if (res.status === 200 && res.json && res.json.result !== undefined) {
-          const rawOut = String(res.json.result).trim();
-          // binary_sensor 平台会用 result_as_boolean() 把结果转成 on/off
-          const shown = t.platform === 'binary_sensor'
-            ? (['1', 'true', 'yes', 'on', 'enable', 'enabled'].includes(rawOut.toLowerCase()) ? 'on' : 'off')
-            : rawOut;
-          line(MARK.ok, `现场渲染 ${label}`, `→ ${shown}`);
-        } else {
-          const msg = res.json?.message ?? String(res.body ?? '').slice(0, 400) ?? `HTTP ${res.status}`;
-          line(MARK.bad, `现场渲染 ${label} 失败`, String(msg).replace(/\s+/g, ' ').trim());
+        if (!out.ok) {
+          line(MARK.bad, `现场渲染 ${label} 失败`, out.error);
+          continue;
         }
+        // binary_sensor 平台会用 result_as_boolean() 把结果转成 on/off
+        const shown = t.platform === 'binary_sensor'
+          ? (isTruthy(out.text) ? 'on' : 'off')
+          : out.text;
+        line(MARK.ok, `现场渲染 ${label}`, `→ ${shown}`);
       }
       reportTransportNote();
     }
+
+    // ---- 保险丝现场求值 ----
+    //  保险丝就是自动化里那段「传感器还活着吗」的 Jinja。
+    //  在 HA 上算一遍,直接看到它是 True 还是 False ——
+    //  False 就等于「每分钟都推 offline」,看板永远显示状态未知。
+    const fuses = loadAutomationTemplates(ROOT);
+    if (!fuses.length) {
+      line(MARK.info, '没找到自动化里的模板条件', 'ha/automations.yaml 的 if 条件读不出来');
+    }
+    for (const f of fuses) {
+      const name = f.alias ?? f.id ?? '(未命名)';
+      let out;
+      try {
+        out = await renderOnHa(args.ha, f.fuse, haHeaders);
+      } catch (err) {
+        line(MARK.bad, `保险丝求值失败(${name})`, err.message);
+        continue;
+      }
+      if (!out.ok) {
+        line(MARK.bad, `保险丝求值失败(${name})`, out.error);
+        continue;
+      }
+      const passed = isTruthy(out.text);
+      line(
+        passed ? MARK.ok : MARK.bad,
+        `保险丝(${name})`,
+        passed
+          ? '→ 通过(会推状态 + 心跳)'
+          : '→ 不通过(会推 offline —— 看板会一直显示「状态未知」)',
+      );
+    }
+    reportTransportNote();
 
     // ---- HA 错误日志:unavailable 的真正原因通常就写在这里 ----
     try {

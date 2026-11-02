@@ -151,7 +151,9 @@ const haServer = http.createServer((req, res) => {
     ]);
     return;
   }
-  // HA 的模板接口:POST /api/template {"template": "..."} → {"result": "..."}
+  // HA 的模板接口:POST /api/template {"template": "..."}
+  // ★ 真实 HA 2026.10 返回的是**纯文本**(不是 {"result": ...}),
+  //   两种形态都得认 —— 只认 JSON 的话,明明渲染成功却会报「失败」。
   if (req.url === '/api/template' && req.method === 'POST') {
     let body = '';
     req.on('data', (c) => { body += c; });
@@ -165,8 +167,19 @@ const haServer = http.createServer((req, res) => {
         }));
         return;
       }
-      // 模拟 HA 的渲染结果:sensor 出状态文本,binary_sensor 出布尔
-      json({ result: /true if/.test(tpl) ? 'True' : 'CLOSED' });
+      if (/fresh and r is not none/.test(tpl)) {
+        // 保险丝:正常时通过,「传感器读不到」时不通过
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end(haMode === 'stale' ? 'False' : 'True');
+        return;
+      }
+      if (/true if/.test(tpl)) {
+        // binary_sensor 模板 —— 这条走 JSON 形态,验证两种都认
+        json({ result: 'True' });
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('CLOSED');
     });
     return;
   }
@@ -220,6 +233,18 @@ check('把仓库里的模板拿去 HA 现场渲染了', ha.out.includes('现场�
 check('报出了现场渲染的结果', ha.out.includes('→ CLOSED'),
   ha.out.split('\n').filter((l) => l.includes('现场渲染')).join(' | '));
 check('查了 HA 错误日志', ha.out.includes('错误日志'));
+check('把三个实体的 last_reported 并排列出来', ha.out.includes('原始门磁实体')
+  && ha.out.includes('状态模板实体') && ha.out.includes('可读性模板实体'));
+check('在 HA 上求值了保险丝', ha.out.includes('保险丝('));
+check('保险丝通过时给了明确结论', ha.out.includes('→ 通过(会推状态 + 心跳)'));
+
+console.log('\n[test] doctor:保险丝不通过(传感器读不到)');
+haMode = 'stale';
+const stale = await runDoctorHa(`http://127.0.0.1:${haPort}`);
+check('报出保险丝不通过', stale.out.includes('→ 不通过'));
+check('说清了不通过的后果', stale.out.includes('状态未知'));
+check('退出码非 0', stale.code !== 0, `退出码 ${stale.code}`);
+haMode = 'ok';
 
 console.log('\n[test] doctor:模板实体 unavailable(线上事故现场)');
 haMode = 'unavailable';

@@ -38,8 +38,11 @@ except ImportError:
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 JSON_PATH = ROOT / "tools" / ".ha-templates.json"
+JSON_AUTO_PATH = ROOT / "tools" / ".ha-automations.json"
 
 ENTITY = "binary_sensor.isa_dw2hl_b95b_magnet_sensor"
+READABLE = "binary_sensor.doorwatch_it_office_door_readable"
+STATE_ENTITY = "sensor.doorwatch_it_office_door_state"
 
 
 class LoggingUndefined(jinja2.Undefined):
@@ -110,6 +113,16 @@ class States:
     def __getitem__(self, name):
         return self.__getattr__(name)
 
+    def __call__(self, entity_id):
+        """states('x') 只返回**状态文本**;实体不存在时 HA 返回 'unknown'。
+
+        ★ 这跟 states.x 的对象写法完全不同 ——
+          states.x.last_reported  → 时间戳
+          states('x').last_updated → 报错(字符串上没有这个属性)
+        """
+        st = self._m.get(entity_id)
+        return st.state if st is not None else "unknown"
+
 
 def parse_datetime(value):
     if not isinstance(value, str):
@@ -174,6 +187,16 @@ def templates_from_disk():
         return []
     try:
         return json.loads(JSON_PATH.read_text(encoding="utf8"))
+    except json.JSONDecodeError:
+        return []
+
+
+def fuses_from_disk():
+    """读 tools/.ha-automations.json —— 自动化里的「模板条件」(保险丝)。"""
+    if not JSON_AUTO_PATH.exists():
+        return []
+    try:
+        return json.loads(JSON_AUTO_PATH.read_text(encoding="utf8"))
     except json.JSONDecodeError:
         return []
 
@@ -251,6 +274,38 @@ LEGACY_READABLE_TPL = """{% set STALE_SECONDS = 180 %}
 {% endif %}"""
 
 
+# =====================================================================
+#  保险丝 —— 自动化里的「传感器还活着吗」
+# =====================================================================
+#
+#  ★★ 线上事故(2026-11):保险丝用的是**模板实体**的 last_reported。
+#     而 HA 只在渲染结果**变化**时才把状态写回 state machine:
+#
+#       helpers/event.py → TrackTemplateResultInfo._render_template_if_ready
+#           if result == last_result and template in self._last_result:
+#               return True      # ← 结果没变,连 update 都不产生
+#
+#     结果没变 → 不产生 update → 回调不跑 → async_write_ha_state() 不跑
+#     → 状态压根没被写进 state machine → **last_reported 永远不动**。
+#
+#     于是模板实体的 last_reported 冻结在「值最后一次变化」的那一刻,
+#     保险丝两分钟后必然判成「过期」→ 每分钟推 offline
+#     → 看板永远显示「状态未知」—— 而门磁明明好好的。
+#
+#     原始门磁就不一样:xiaomi_miot 每轮轮询都写一次状态,
+#     值没变时 HA 走 async_set_internal 的「提前返回」分支,
+#     **只更新 last_reported** —— 它的 last_reported 是真在推进的。
+#
+LEGACY_FUSE = """{% set r = states.binary_sensor.doorwatch_it_office_door_readable %}
+{% set ts = r.last_reported | default(r.last_updated, true) %}
+{% set ok = false %}
+{% if r is not none and r.state == 'on' and ts is defined and ts is not none
+       and ts.year is defined %}
+  {% set ok = (as_timestamp(now()) - as_timestamp(ts)) < 120 %}
+{% endif %}
+{{ ok }}"""
+
+
 def legacy_regressions():
     """重现线上事故的现象,并确认新版模板已经修好。返回问题数。"""
     n = dt.datetime.now(dt.timezone.utc)
@@ -297,6 +352,21 @@ def legacy_regressions():
     else:
         print("       ✓ 复现:同一个表达式,靠 and 短路活了下来 → 这就是那个不对称")
 
+    # ④ 旧保险丝:模板实体的 last_reported 冻结着 → 永远判「过期」
+    print("       (HA 里表现为:每分钟推 offline,看板永远「状态未知」)")
+    frozen = n - dt.timedelta(minutes=30)
+    fuse_map = {
+        ENTITY: State(ENTITY, "off", fresh, fresh),
+        READABLE: State(READABLE, "on", frozen, frozen),
+        STATE_ENTITY: State(STATE_ENTITY, "CLOSED", frozen, frozen),
+    }
+    out = show("旧保险丝(模板 last_reported 冻结在 30 分钟前)", LEGACY_FUSE, fuse_map)
+    if out != "False":
+        print("       ✗ 预期是 'False'")
+        failures += 1
+    else:
+        print("       ✓ 复现:模板实体的 last_reported 不推进 → 保险丝永远不通过")
+
     print("-" * 76)
     print("新版模板(仓库里现在这份)在这两种输入下的表现:")
     for label, mapping in (
@@ -315,6 +385,67 @@ def legacy_regressions():
                 print(f"  {tpl['unique_id']:<34} {label:<22} → ✗ {type(exc).__name__}: {exc}")
                 print("       ✗ 新版模板不应该再炸")
                 failures += 1
+    print("")
+    return failures
+
+
+def fuse_scenarios():
+    """把仓库里的保险丝在几种场景下跑一遍。返回问题数。"""
+    n = dt.datetime.now(dt.timezone.utc)
+    fresh = n - dt.timedelta(seconds=10)
+    stale = n - dt.timedelta(seconds=600)
+    # 模板实体的 last_reported:冻结在「值最后一次变化」的那一刻(见上面的说明)
+    frozen = n - dt.timedelta(minutes=30)
+
+    def mapping(raw_rep, raw_state, readable_state, state_value):
+        return {
+            ENTITY: State(ENTITY, raw_state, raw_rep, raw_rep),
+            READABLE: State(READABLE, readable_state, frozen, frozen),
+            STATE_ENTITY: State(STATE_ENTITY, state_value, frozen, frozen),
+        }
+
+    cases = [
+        ("一切正常(原始门磁 10 秒前上报)", mapping(fresh, "off", "on", "CLOSED"), True),
+        ("原始门磁已失联(600 秒前)", mapping(stale, "off", "on", "CLOSED"), False),
+        ("可读性模板说读不到", mapping(fresh, "off", "off", "CLOSED"), False),
+        ("状态模板给不出明确答案(UNKNOWN)", mapping(fresh, "off", "on", "UNKNOWN"), False),
+    ]
+
+    failures = 0
+    print("=" * 76)
+    print("保险丝(自动化里的「传感器还活着吗」)")
+    print("-" * 76)
+
+    fuses = fuses_from_disk()
+    if not fuses:
+        print("  没读到保险丝模板,先跑 node tools/dump-ha-templates.mjs")
+        return 1
+
+    for f in fuses:
+        print(f"  {f.get('alias') or f.get('id')}")
+        for label, m, expected in cases:
+            try:
+                out = render_raw(f["fuse"], m).strip()
+                got = out.lower() in ("true", "yes", "on", "1")
+                mark = "✓" if got == expected else "✗"
+                print(f"    {mark} {label:<40} → {out!r}")
+                if got != expected:
+                    failures += 1
+            except Exception as exc:  # noqa: BLE001
+                print(f"    ✗ {label:<40} → {type(exc).__name__}: {exc}")
+                failures += 1
+        print("")
+
+    print("-" * 76)
+    print("对照:旧保险丝在同一组输入下的表现")
+    for label, m, expected in cases:
+        try:
+            out = render_raw(LEGACY_FUSE, m).strip()
+            got = out.lower() in ("true", "yes", "on", "1")
+            mark = "✓" if got == expected else "✗"
+            print(f"  {mark} {label:<40} → {out!r}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  ✗ {label:<40} → {type(exc).__name__}: {exc}")
     print("")
     return failures
 
@@ -353,6 +484,7 @@ def main():
         print("")
 
     failures += legacy_regressions()
+    failures += fuse_scenarios()
 
     print("=" * 76)
     if failures:

@@ -15,10 +15,11 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadTemplates } from './ha-templates.mjs';
+import { loadTemplates, loadAutomationTemplates } from './ha-templates.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const OUT = path.join(ROOT, 'tools', '.ha-templates.json');
+const OUT_AUTO = path.join(ROOT, 'tools', '.ha-automations.json');
 
 const { templates, source } = loadTemplates(ROOT);
 
@@ -42,3 +43,21 @@ for (const t of templates) {
   console.log('');
 }
 console.log(`已写入 ${OUT}`);
+
+// 自动化里的「模板条件」(保险丝)也导出 —— 它们同样是 HA 会执行到的 Jinja
+const fuses = loadAutomationTemplates(ROOT);
+fs.writeFileSync(OUT_AUTO, JSON.stringify(fuses, null, 2), 'utf8');
+console.log('');
+console.log(`── 自动化里的模板条件(保险丝)${fuses.length} 条`);
+for (const f of fuses) {
+  console.log(`   ${f.alias ?? f.id}`);
+  console.log(`   HA 实际读到的条件(${f.fuse.length} 字符):`);
+  console.log(
+    f.fuse
+      .split('\n')
+      .map((l, i) => `     ${i + 1}| ${l}`)
+      .join('\n'),
+  );
+  console.log('');
+}
+console.log(`已写入 ${OUT_AUTO}`);
