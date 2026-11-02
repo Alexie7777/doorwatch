@@ -47,6 +47,24 @@ node tools/doctor.mjs --doorwatch https://<你的服务器>:8443 --insecure
 
 看板一直显示「状态未知」时,**先跑这个**,不要瞎猜。
 
+带上 HA 一起查(推荐,能多查两样东西):
+
+```bash
+node tools/doctor.mjs \
+  --doorwatch https://<你的服务器>:8443 --insecure \
+  --ha http://<你的HA>:8123 --token <TOKEN>
+```
+
+多查的两样是:
+
+| 检查 | 它做什么 | 什么时候看它 |
+|---|---|---|
+| **现场渲染** | 把本仓库 `ha/templates.yaml` 里的模板**直接 POST 给 HA 的 `/api/template`**,看它此刻渲染成什么 | **装配置之前就该跑一次** —— 能在改 HA 配置之前就确认这份模板在你这台 HA 上不会炸 |
+| **错误日志** | 抓 HA 的 `/api/error_log`,把跟 doorwatch 有关的报错原文打出来 | 实体显示 `unavailable` 时,它会直接告诉你**是哪一行模板抛的异常**,不用再去 HA 网页里翻日志 |
+
+> token 在 HA 里拿:**左下角头像 → 安全 → 长期访问令牌 → 创建令牌**。
+> HA 默认是 **http**,写成 https 的话工具会自己降级重试。
+
 ---
 
 ## 第 1 步 确认实体名和方向(2 分钟)
@@ -241,6 +259,18 @@ template:
 
 两个都没有 → YAML 没装对,回 3.1 查。
 
+实体显示 **`unavailable`** → 模板渲染抛异常了。跑一次体检,它会把
+HA 报错原文直接打出来:
+
+```bash
+node tools/doctor.mjs --doorwatch https://<你的服务器>:8443 --insecure \
+  --ha http://<你的HA>:8123 --token <TOKEN>
+```
+
+实体显示 `UNKNOWN`(而不是 `CLOSED`)→ 模板活着,但**读不到门磁**。
+去看 `binary_sensor.isa_dw2hl_b95b_magnet_sensor` 在 HA 里是不是
+`unavailable` —— 那是集成那边的问题,不是模板的问题。
+
 ---
 
 ## 第 4 步 确认 deviceId 对得上(2 分钟)
@@ -338,6 +368,8 @@ docker compose logs -f doorwatch
 | 看板一直是「状态未知」 | 模板实体没建起来 | HA 设置 → 工具 → 状态 搜 `doorwatch_it_office` |
 | 看板一直是「状态未知」 | 实体名写错了 | `node tools/ha-probe.mjs` 看真实 entity_id |
 | 看板一直是「状态未知」 | HA 版本太老,没有 `last_reported` | 设置 → 工具 → 模板,跑 `{{ states.binary_sensor.你的门磁.last_reported }}`,报错就是太老,升级 HA |
+| 模板实体 = **`unavailable`** | 模板渲染抛了 `TemplateError` | 跑 `node tools/doctor.mjs --ha … --token …`,它会打出 HA 的报错原文和错误日志 |
+| 模板永远输出 `UNKNOWN`,哪怕门开着 | 用了 `src in ['on','off']` | `src` 是**状态对象**,`State.__eq__` 比的是 entity_id → 恒为 False。要比文本必须写 `src.state in ['on','off']` |
 | 看板不动,但 HA 里状态对 | MQTT 没通 | HA → 集成 → MQTT → 配置,看 broker 地址;服务端日志里看有没有「传感器接入」 |
 | 服务端日志刷「收到未登记设备」 | deviceId 对不上 | 比对 `config/doors.json` 和 `automations.yaml` 里的主题后缀 |
 | 状态反了(开门显示关) | 方向开关 | `templates.yaml` 里 `DOOR_ON_MEANS_OPEN` 改 `false` |

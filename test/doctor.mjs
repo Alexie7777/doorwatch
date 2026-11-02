@@ -111,6 +111,10 @@ check('结论说明服务端没起来', down.out.includes('服务端没起来'))
  * 假 HA:验证 https 写错时能自动降级,以及自动化检查
  * ------------------------------------------------------------------ */
 console.log('\n[test] doctor:连 HA(故意用 https 写错)');
+
+/** 假 HA 的行为开关:'ok' 正常 | 'unavailable' 模板实体炸了 */
+let haMode = 'ok';
+
 const haServer = http.createServer((req, res) => {
   const json = (obj) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -121,7 +125,7 @@ const haServer = http.createServer((req, res) => {
     json([
       {
         entity_id: 'sensor.doorwatch_it_office_door_state',
-        state: 'OPEN',
+        state: haMode === 'unavailable' ? 'unavailable' : 'OPEN',
         attributes: { friendly_name: 'Doorwatch IT Office Door State' },
         last_updated: now,
       },
@@ -147,29 +151,64 @@ const haServer = http.createServer((req, res) => {
     ]);
     return;
   }
+  // HA 的模板接口:POST /api/template {"template": "..."} → {"result": "..."}
+  if (req.url === '/api/template' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      let tpl = '';
+      try { tpl = JSON.parse(body || '{}').template ?? ''; } catch { /* 忽略 */ }
+      if (haMode === 'unavailable') {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          message: "Template error: as_timestamp got invalid input Undefined",
+        }));
+        return;
+      }
+      // 模拟 HA 的渲染结果:sensor 出状态文本,binary_sensor 出布尔
+      json({ result: /true if/.test(tpl) ? 'True' : 'CLOSED' });
+    });
+    return;
+  }
+  // HA 的错误日志
+  if (req.url === '/api/error_log') {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end(haMode === 'unavailable'
+      ? '2026-10-21 09:00:00 ERROR (MainThread) [homeassistant.components.template.template_entity] '
+        + 'Error rendering template for sensor.doorwatch_it_office_door_state: '
+        + "Template error: as_timestamp got invalid input Undefined\n"
+      : '2026-10-21 09:00:00 INFO (MainThread) [homeassistant.core] 一切正常\n');
+    return;
+  }
   res.writeHead(404, { 'Content-Type': 'application/json' });
   res.end('{}');
 });
 await new Promise((resolve) => haServer.listen(0, '127.0.0.1', resolve));
 const haPort = haServer.address().port;
 
+/** 跑一次 doctor,带上 HA 的参数 */
+function runDoctorHa(haUrl, extraArgs = []) {
+  return new Promise((resolve) => {
+    const child = spawn(
+      process.execPath,
+      [
+        path.join(ROOT, 'tools', 'doctor.mjs'),
+        '--doorwatch', `http://127.0.0.1:${port}`,
+        '--ha', haUrl,
+        '--token', 'test-token',
+        ...extraArgs,
+      ],
+      { cwd: ROOT },
+    );
+    let out = '';
+    child.stdout.on('data', (c) => { out += c; });
+    child.stderr.on('data', (c) => { out += c; });
+    child.on('close', (code) => resolve({ code, out }));
+  });
+}
+
 // HA 默认是 http,用户很可能写成 https —— 工具要能自己降级
-const ha = await new Promise((resolve) => {
-  const child = spawn(
-    process.execPath,
-    [
-      path.join(ROOT, 'tools', 'doctor.mjs'),
-      '--doorwatch', `http://127.0.0.1:${port}`,
-      '--ha', `https://127.0.0.1:${haPort}`,
-      '--token', 'test-token',
-    ],
-    { cwd: ROOT },
-  );
-  let out = '';
-  child.stdout.on('data', (c) => { out += c; });
-  child.stderr.on('data', (c) => { out += c; });
-  child.on('close', (code) => resolve({ code, out }));
-});
+const ha = await runDoctorHa(`https://127.0.0.1:${haPort}`);
 
 check('https 写错时自动降级成 http 并连上', ha.out.includes('门状态模板 = OPEN'), '没连上 HA');
 check('提示了降级原因', ha.out.includes('已自动改用 http'));
@@ -177,6 +216,20 @@ check('校验出可读性模板是 on/off', ha.out.includes('可读性模板 = o
 check('打印了原始门磁实体', ha.out.includes('原始门磁实体'));
 check('列出了 doorwatch 的自动化', ha.out.includes('每分钟体检'));
 check('报告了自动化上次触发时间', ha.out.includes('上次触发'));
+check('把仓库里的模板拿去 HA 现场渲染了', ha.out.includes('现场渲染'));
+check('报出了现场渲染的结果', ha.out.includes('→ CLOSED'),
+  ha.out.split('\n').filter((l) => l.includes('现场渲染')).join(' | '));
+check('查了 HA 错误日志', ha.out.includes('错误日志'));
+
+console.log('\n[test] doctor:模板实体 unavailable(线上事故现场)');
+haMode = 'unavailable';
+const broken = await runDoctorHa(`http://127.0.0.1:${haPort}`);
+check('报出门状态模板 = unavailable', broken.out.includes('门状态模板 = unavailable'));
+check('说清了是模板渲染抛异常', broken.out.includes('模板渲染抛异常'));
+check('现场渲染失败时把 HA 的报错原文带出来', broken.out.includes('as_timestamp got invalid input'));
+check('把错误日志里的 doorwatch 报错打出来了', broken.out.includes('Error rendering template'));
+check('退出码非 0', broken.code !== 0, `退出码 ${broken.code}`);
+haMode = 'ok';
 
 console.log('\n[test] doctor:HA 里没有自动化');
 haServer.removeAllListeners('request');
@@ -184,22 +237,7 @@ haServer.on('request', (req, res) => {
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify([]));
 });
-const noAuto = await new Promise((resolve) => {
-  const child = spawn(
-    process.execPath,
-    [
-      path.join(ROOT, 'tools', 'doctor.mjs'),
-      '--doorwatch', `http://127.0.0.1:${port}`,
-      '--ha', `http://127.0.0.1:${haPort}`,
-      '--token', 'test-token',
-    ],
-    { cwd: ROOT },
-  );
-  let out = '';
-  child.stdout.on('data', (c) => { out += c; });
-  child.stderr.on('data', (c) => { out += c; });
-  child.on('close', (code) => resolve({ code, out }));
-});
+const noAuto = await runDoctorHa(`http://127.0.0.1:${haPort}`);
 check('报出「没有 doorwatch 相关的自动化」', noAuto.out.includes('没有 doorwatch 相关的自动化'));
 check('指出了 configuration.yaml 缺 include', noAuto.out.includes('automation: !include automations.yaml'));
 

@@ -164,6 +164,9 @@ node tools/doctor.mjs --doorwatch https://<你的服务器>:8443 --insecure \
   ✅ 门状态模板 = OPEN
   ✅ 可读性模板 = on  (传感器在正常上报)
   · 原始门磁实体 = off  last_reported 12 秒前
+  ✅ 现场渲染 doorwatch_it_office_door_state  → OPEN
+  ✅ 现场渲染 doorwatch_it_office_door_readable  → on
+  ✅ HA 错误日志里没有模板相关的报错
 
 [4/5] 主题与 deviceId 对齐
   ✅ doorwatch 登记的 deviceId: it-office-door, server-room-door, it-store-door
@@ -173,6 +176,13 @@ node tools/doctor.mjs --doorwatch https://<你的服务器>:8443 --insecure \
 [5/5] 结论
   ✅ 链路已通 —— 门开着的话,看板会显示「门开着」。
 ```
+
+带上 `--ha` 之后,体检会多做两件事:
+
+| 检查 | 它做什么 | 为什么有用 |
+|---|---|---|
+| **现场渲染** | 把本仓库 `ha/templates.yaml` 里的模板直接 POST 给 HA 的 `/api/template` | **装配置之前**就能确认这份模板在你这台 HA 上不会炸;渲染失败还会把 HA 的报错原文带回来 |
+| **错误日志** | 抓 HA 的 `/api/error_log`,打出跟 doorwatch 有关的报错 | 实体显示 `unavailable` 时,直接告诉你**是哪一行模板抛的异常**,不用再去 HA 网页里翻 |
 
 不想用工具的话,手动确认也行:
 
@@ -796,6 +806,14 @@ node tools/doctor.mjs --doorwatch https://<服务器>:8443 --insecure \
 - **看板显示「最后收到 N 小时前」,但 MQTT 上有客户端连着** → 数据源那边断了,
   不是 doorwatch 的问题。走 HA 方案的话,九成是 `xiaomi_miot` 的 token 过期了
   (`SERVICETOKEN_EXPIRED`),解法见 [`ha/README.md`](ha/README.md) 第七节。
+- **HA 里的模板实体显示 `unavailable`** → 模板渲染抛了 `TemplateError`。
+  体检会把 HA 的报错原文和错误日志一起打出来;想自己看也可以去
+  **设置 → 工具 → 调试**。成因和修法见
+  [`ha/README.md`](ha/README.md) 第四节的「模板层的两条硬规则」。
+- **HA 里的模板实体永远是 `UNKNOWN`,哪怕门明明开着** → 模板里写了
+  `src in ['on','off']` 这类**拿状态对象跟字符串比**的写法(恒为 False),
+  或者用了 `states('x').last_updated`(字符串形式拿不到时间戳)。
+  同上,见 `ha/README.md` 第四节。
 
 **Q:HA 报 "MQTT protocol migration failed"**
 新版本 HA 想把 MQTT 连接迁到协议 5,而内置的 broker(aedes)还不支持 MQTT 5。
@@ -1185,9 +1203,10 @@ doorwatch/
 ├── deploy/              # Dockerfile / docker-compose.yml
 ├── tools/
 │   ├── demo.mjs         #   一键演示
-│   ├── doctor.mjs       #   ★ 链路体检:一条命令查完 5 环,告诉你断在哪
+│   ├── doctor.mjs       #   ★ 链路体检:一条命令查完 5 环,还能现场渲染模板、翻 HA 错误日志
 │   ├── ha-probe.mjs     #   HA 探针:找门磁实体 / 验方向 / 看时间戳
 │   ├── dump-ha-templates.mjs  # 把 HA 真正读到的模板字符串导出成 JSON
+│   ├── ha-templates.mjs  #   读 ha/templates.yaml(dump 和 doctor 共用同一份解析)
 │   ├── ha-template-sim.py    # ★ 离线复刻 HA 的 Jinja 语义,不用装 HA 就能验模板
 │   ├── check-ports.mjs  #   端口占用检查(部署前先跑)
 │   └── simulate.mjs     #   传感器模拟器

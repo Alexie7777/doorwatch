@@ -8,37 +8,24 @@
  * 全被 YAML 改过一遍。而 HA 模板里出的每一个空格,都可能变成
  * " UNKNOWN " 这种带空格的状态值,或者让 Jinja 直接抛异常。
  *
+ * 解析逻辑和 tools/doctor.mjs 共用 tools/ha-templates.mjs,
+ * 保证「仿真看到的」和「现场渲染用的」是同一份文本。
+ *
  * 用法: node tools/dump-ha-templates.mjs
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { createRequire } from 'node:module';
-
-const require = createRequire(import.meta.url);
-const YAML = require('yaml');
+import { loadTemplates } from './ha-templates.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const SRC = path.join(ROOT, 'ha', 'templates.yaml');
 const OUT = path.join(ROOT, 'tools', '.ha-templates.json');
 
-const doc = YAML.parse(fs.readFileSync(SRC, 'utf8'));
-if (!Array.isArray(doc)) {
-  console.error('❌ ha/templates.yaml 顶层不是数组(必须是裸列表)');
-  process.exit(1);
-}
+const { templates, source } = loadTemplates(ROOT);
 
-const templates = [];
-for (const section of doc) {
-  for (const [platform, list] of Object.entries(section ?? {})) {
-    for (const entity of list ?? []) {
-      templates.push({
-        platform,
-        unique_id: entity.unique_id ?? null,
-        name: entity.name ?? null,
-        state: entity.state ?? null,
-      });
-    }
-  }
+if (!templates.length) {
+  console.error('❌ 没解析出任何模板(ha/templates.yaml 顶层必须是裸列表)');
+  console.error('   解析自:', source ?? '(没找到可用的来源)');
+  process.exit(1);
 }
 
 fs.writeFileSync(OUT, JSON.stringify(templates, null, 2), 'utf8');

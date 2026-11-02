@@ -71,6 +71,49 @@
 #      必须用对象写法 states.entity.id.last_reported。
 #      写成 states('entity.id').last_updated 会在模板里直接报错。
 #
+#  ★★★ 算式必须放在 {% if %} 的 **body** 里,不能放在 and 链或 {% set %} 里。
+#      这是本项目踩过最贵的一个坑,记在这里别再踩:
+#
+#      as_timestamp() 只认 datetime。喂给它一个 Undefined 或字符串,
+#      内部会走 parse_datetime(str(value)) → 解析失败 →
+#      raise ValueError("not a valid date/time.") → TemplateError
+#      → HA 把实体置成 **unavailable**。
+#
+#      而 Jinja 的 `and` 是**短路**的 —— 这会造成一种特别迷惑的现象:
+#
+#        {% set alive = seen is defined and seen is not none
+#                        and (as_timestamp(now()) - as_timestamp(seen)) < 180 %}
+#        {% if src in ['on','off'] and alive %} ... {% endif %}
+#          ↑ 这里面的 as_timestamp 是**无条件求值**的 —— {% set %} 里的
+#            and 链虽然也短路,但前提是 seen is defined 为 False。
+#            一旦 seen「有值但不是 datetime」,照样炸。
+#
+#        {% if src in ['on','off'] and seen is defined and seen is not none
+#              and (as_timestamp(now()) - as_timestamp(seen)) < 180 %}
+#          ↑ 同一个表达式,放在 and 链**末端**,
+#            前面 src in ['on','off'] 为 False 时**整条链短路,压根不求值**,
+#            于是这个模板活得好好的。
+#
+#      结果就是:同一个文件里的两个模板,一个 unavailable、一个正常,
+#      看起来毫无关系。**唯一可靠的做法是把 as_timestamp 塞进
+#      {% if %} 的 body 里**,让守卫先跑:
+#
+#        {% set fresh = false %}
+#        {% if src is not none and seen is defined and seen is not none
+#               and seen.year is defined %}          ← seen 必须是 datetime
+#          {% set fresh = (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
+#        {% endif %}
+#
+#      `seen.year is defined` 是在问「它有没有年份」:
+#      datetime 有,字符串和 Undefined 都没有 → 非 datetime 一律挡在外面,
+#      模板老老实实输出 UNKNOWN,而不是把实体搞成 unavailable。
+#
+#  ★★ 再一个坑:状态**对象**不能直接跟字符串比。
+#      states.binary_sensor.x 拿到的是状态对象,不是状态文本。
+#      HA 的 State.__eq__ 比的是 entity_id(且只跟另一个 State 比),
+#      所以 `src in ['on','off']` 和 `src == 'on'` **恒为 False**。
+#      要拿文本必须写 `src.state` —— 本文件里用的是 src.state。
+#
 #  ★★ 如果你的集成是**推送型**(小米官方 Xiaomi Home),本文件的判据要调一下:
 #
 #    推送型只在设备主动上报时才写状态 —— 门一直不动,last_reported 也不动。
@@ -146,7 +189,7 @@
         {% set STALE_SECONDS = 180 %}
         {% set seen = src.last_reported | default(src.last_updated, true) %}
         {% set fresh = false %}
-        {% if src is not none and seen is defined and seen is not none %}
+        {% if src is not none and seen is defined and seen is not none and seen.year is defined %}
           {% set fresh = (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
         {% endif %}
         {% if fresh and src.state in ['on', 'off'] %}
@@ -175,7 +218,7 @@
         {% set STALE_SECONDS = 180 %}
         {% set seen = src.last_reported | default(src.last_updated, true) %}
         {% set fresh = false %}
-        {% if src is not none and seen is defined and seen is not none %}
+        {% if src is not none and seen is defined and seen is not none and seen.year is defined %}
           {% set fresh = (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
         {% endif %}
         {{ true if (fresh and src.state in ['on', 'off']) else false }}
@@ -192,7 +235,7 @@
 #         {% set STALE_SECONDS = 180 %}
 #         {% set seen = src.last_reported | default(src.last_updated, true) %}
 #         {% set fresh = false %}
-#         {% if src is not none and seen is defined and seen is not none %}
+#         {% if src is not none and seen is defined and seen is not none and seen.year is defined %}
 #           {% set fresh = (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
 #         {% endif %}
 #         {% if fresh and src.state in ['on', 'off'] %}
@@ -209,7 +252,7 @@
 #         {% set STALE_SECONDS = 180 %}
 #         {% set seen = src.last_reported | default(src.last_updated, true) %}
 #         {% set fresh = false %}
-#         {% if src is not none and seen is defined and seen is not none %}
+#         {% if src is not none and seen is defined and seen is not none and seen.year is defined %}
 #           {% set fresh = (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
 #         {% endif %}
 #         {{ true if (fresh and src.state in ['on', 'off']) else false }}

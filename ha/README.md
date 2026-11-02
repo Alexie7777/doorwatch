@@ -457,6 +457,72 @@ states.binary_sensor.x.last_reported       # ✅ 时间戳要这么写
 > ② 「每分钟体检」推 `status: offline` → 立刻打回未知
 > ③ doorwatch 自己的心跳超时(180 秒)→ 兜底
 
+### ★★ 模板层的两条硬规则(各踩过一次,写下来免得再踩)
+
+#### 规则一:`as_timestamp()` 必须放在 `{% if %}` 的 **body** 里
+
+`as_timestamp()` 只认 `datetime`。喂给它 `Undefined` 或字符串,内部会走
+`parse_datetime(str(value))` → 解析失败 → `raise ValueError("not a valid date/time.")`
+→ `TemplateError` → HA 把实体置成 **`unavailable`**。
+
+而 Jinja 的 `and` 是**短路**的 —— 于是同一个文件里的两个模板会闹出这种迷惑现象:
+
+```jinja
+{# A:as_timestamp 在独立的 {% set %} 里 → 无条件求值 → 炸 #}
+{% set alive = seen is defined and seen is not none
+              and (as_timestamp(now()) - as_timestamp(seen)) < 180 %}
+{% if src in ['on', 'off'] and alive %} ... {% endif %}
+
+{# B:同一个表达式在 and 链末端 → 前面为 False 就短路 → 压根不求值 → 活 #}
+{% if src in ['on', 'off'] and seen is defined and seen is not none
+      and (as_timestamp(now()) - as_timestamp(seen)) < 180 %} ... {% endif %}
+```
+
+线上真实事故就是 A 和 B 同时存在:一个实体 `unavailable`,
+另一个好好地渲染出 `False`。两者用的是**同一个源实体、同一个判据**,
+看着毫无关系 —— 靠读代码根本看不出来。
+
+唯一可靠的做法是让守卫先跑:
+
+```jinja
+{% set fresh = false %}
+{% if src is not none and seen is defined and seen is not none
+       and seen.year is defined %}          {# seen 必须真的是 datetime #}
+  {% set fresh = (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
+{% endif %}
+```
+
+`seen.year is defined` 是在问「它有没有年份」:`datetime` 有,字符串和 `Undefined` 都没有
+→ 非 datetime 一律挡在外面,模板老老实实输出 `UNKNOWN`,而不是把实体搞成 `unavailable`。
+
+#### 规则二:状态对象不能直接跟字符串比
+
+`states.binary_sensor.x` 拿到的是**状态对象**,不是状态文本。
+HA 的 `State.__eq__` 比的是 `entity_id`(而且只跟另一个 `State` 比):
+
+```python
+def __eq__(self, other: object) -> bool:
+    return isinstance(other, State) and self.entity_id == other.entity_id
+```
+
+所以 `src in ['on', 'off']` 和 `src == 'on'` **恒为 False** ——
+哪怕门开着、传感器刚上报过,模板也只会输出 `UNKNOWN`。
+要比文本必须写 `src.state`。
+
+> 这两条都有离线仿真守着:`npm run check:ha-templates` 跑 7 个场景,
+> 还会把旧模板的事故现场复现一遍(一个 `unavailable`、一个 `False` 的不对称),
+> 确认新版模板已经修好。
+
+#### 想在装配置之前就确认模板没问题?
+
+用 doctor 的**现场渲染**:它把本仓库的模板直接 POST 给 HA 的 `/api/template`,
+当场看会渲染成什么,渲染失败还会把 HA 的报错原文带回来:
+
+```bash
+node tools/doctor.mjs --doorwatch https://<服务器>:8443 --insecure \
+  --ha http://<HA>:8123 --token <TOKEN>
+```
+
 ### 轮询间隔要配
 
 `xiaomi_miot` 默认 **60 秒**轮询一次(`interval_seconds` 可改)。

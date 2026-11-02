@@ -106,7 +106,8 @@
             {% set r = states.binary_sensor.doorwatch_it_office_door_readable %}
             {% set ts = r.last_reported | default(r.last_updated, true) %}
             {% set ok = false %}
-            {% if r is not none and r.state == 'on' and ts is defined and ts is not none %}
+            {% if r is not none and r.state == 'on' and ts is defined and ts is not none
+                   and ts.year is defined %}
               {% set ok = (as_timestamp(now()) - as_timestamp(ts)) < 120 %}
             {% endif %}
             {{ ok }}
@@ -154,7 +155,8 @@
             {% set r = states.binary_sensor.doorwatch_it_office_door_readable %}
             {% set ts = r.last_reported | default(r.last_updated, true) %}
             {% set ok = false %}
-            {% if r is not none and r.state == 'on' and ts is defined and ts is not none %}
+            {% if r is not none and r.state == 'on' and ts is defined and ts is not none
+                   and ts.year is defined %}
               {% set ok = (as_timestamp(now()) - as_timestamp(ts)) < 120 %}
             {% endif %}
             {{ ok }}

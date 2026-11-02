@@ -60,13 +60,26 @@ class State:
             self.last_reported = last_reported
 
     def __eq__(self, other):
-        return isinstance(other, str) and self.state == other
+        """对齐 homeassistant/core.py 的 State.__eq__。
+
+        ★ 这里踩过坑,别改回去:
+          HA 的 State.__eq__ 比的是 **entity_id**,而且只跟另一个 State 比:
+              return isinstance(other, State) and self.entity_id == other.entity_id
+
+          所以在模板里写 `src in ['on', 'off']` 或 `src == 'on'` —— **恒为 False**。
+          `src` 是状态对象,不是状态文本;要拿文本必须写 `src.state`。
+
+          早先这个仿真器写成「按 state 字符串比」,结果仿真一路绿灯,
+          真实的 HA 却因为 `src in ['on','off']` 恒 False 而永远输出 UNKNOWN。
+          仿真器比真实行为宽松,比模板宽松更危险 —— 它会掩盖 bug。
+        """
+        return isinstance(other, State) and self.entity_id == other.entity_id
 
     def __hash__(self):
         return hash(self.entity_id)
 
     def __str__(self):
-        return self.state
+        return f"{self.entity_id}={self.state}"
 
     def __bool__(self):
         return True
@@ -155,6 +168,16 @@ def render_raw(tpl_text, mapping):
     return env.from_string(tpl_text).render()
 
 
+def templates_from_disk():
+    """读 tools/.ha-templates.json —— 由 tools/dump-ha-templates.mjs 生成。"""
+    if not JSON_PATH.exists():
+        return []
+    try:
+        return json.loads(JSON_PATH.read_text(encoding="utf8"))
+    except json.JSONDecodeError:
+        return []
+
+
 def to_ha_state(platform, raw):
     """把渲染结果变成 HA 里实体真正会显示的状态值。"""
     out = raw.strip()  # HA: helpers/template/__init__.py:494
@@ -174,14 +197,133 @@ def scenarios():
         ("实体 unavailable,刚上报", {ENTITY: State(ENTITY, "unavailable", fresh, fresh)}),
         ("门开着,刚上报", {ENTITY: State(ENTITY, "on", fresh, fresh)}),
         ("旧版 HA:没有 last_reported", {ENTITY: State(ENTITY, "off", fresh)}),
+        # seen 不是 datetime —— as_timestamp() 遇到它会抛 ValueError → TemplateError
+        ("上报时间取不到(不是 datetime)", {ENTITY: State(ENTITY, "off", fresh, "unknown")}),
     ]
+
+
+# =====================================================================
+#  旧模板为什么是坏的 —— 留档,别把同样的坑再踩一遍
+# =====================================================================
+#
+#  线上真实事故(2026-10):HA 里跑着旧版 templates.yaml,
+#  现象是「sensor.doorwatch_it_office_door_state = unavailable,
+#  而同一个文件里的 readable 模板却能正常渲染出 False」。
+#
+#  两个模板用的是同一个源实体、同一个新鲜度判据,结果一个炸一个不炸,
+#  看着毫无关系。真正的原因有两层:
+#
+#  ① as_timestamp() 只认 datetime。喂 Undefined 或字符串 →
+#     parse_datetime(str(value)) 失败 → ValueError → TemplateError
+#     → 实体被 HA 置成 unavailable。
+#
+#  ② Jinja 的 `and` 是短路的,而且**短路救不救得看表达式放在哪**:
+#     · door_state: as_timestamp() 在**独立的 {% set %}** 里 → 无条件求值 → 炸
+#     · readable:   as_timestamp() 在 **{% if %} 的 and 链末端**,
+#                   前面 `src in ['on','off']` 为 False → 整条链短路 → 压根不求值 → 活
+#
+#  还有一个独立的、跟 unavailable 无关的致命 bug:
+#     `src in ['on','off']` —— src 是**状态对象**,
+#     HA 的 State.__eq__ 比的是 entity_id,所以这一句**恒为 False**。
+#     旧 door_state 因此永远输出 UNKNOWN,哪怕门开着、传感器刚上报过。
+#
+LEGACY_STATE_TPL = """{% set src = states.binary_sensor.isa_dw2hl_b95b_magnet_sensor %}
+{% set DOOR_ON_MEANS_OPEN = true %}
+{% set STALE_SECONDS = 180 %}
+{% set seen = src.last_reported | default(src.last_updated, true) %}
+{% set alive = seen is defined and seen is not none
+              and (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
+{% if src in ['on', 'off'] and alive %}
+  {% set is_open = (src == 'on') == DOOR_ON_MEANS_OPEN %}
+  {{ 'OPEN' if is_open else 'CLOSED' }}
+{% else %}
+  {{ 'UNKNOWN' }}
+{% endif %}"""
+
+LEGACY_READABLE_TPL = """{% set STALE_SECONDS = 180 %}
+{% set src = states.binary_sensor.isa_dw2hl_b95b_magnet_sensor %}
+{% set seen = src.last_reported | default(src.last_updated, true) %}
+{% if src in ['on', 'off'] and seen is defined and seen is not none
+      and (as_timestamp(now()) - as_timestamp(seen)) < STALE_SECONDS %}
+  {{ true }}
+{% else %}
+  {{ false }}
+{% endif %}"""
+
+
+def legacy_regressions():
+    """重现线上事故的现象,并确认新版模板已经修好。返回问题数。"""
+    n = dt.datetime.now(dt.timezone.utc)
+    fresh = n - dt.timedelta(seconds=10)
+    bad_seen = {ENTITY: State(ENTITY, "off", fresh, "unknown")}
+    open_fresh = {ENTITY: State(ENTITY, "on", fresh, fresh)}
+
+    failures = 0
+    print("=" * 76)
+    print("旧模板事故复现(留档)")
+    print("-" * 76)
+
+    def show(label, tpl, mapping):
+        try:
+            out = render_raw(tpl, mapping).strip()
+            print(f"  {label:<44} → {out!r}")
+            return out
+        except Exception as exc:  # noqa: BLE001
+            print(f"  {label:<44} → ✗ {type(exc).__name__}")
+            return None
+
+    # ① 旧 door_state:门开着、刚上报,却报 UNKNOWN(src in [...] 恒 False)
+    out = show("旧 door_state(门开着、10 秒前上报)", LEGACY_STATE_TPL, open_fresh)
+    if out != "UNKNOWN":
+        print("       ✗ 预期是 UNKNOWN —— 说明仿真器的 State.__eq__ 又被改松了")
+        failures += 1
+    else:
+        print("       ✓ 复现:`src in ['on','off']` 恒 False,门开着也报 UNKNOWN")
+
+    # ② 旧 door_state:seen 不是 datetime → TemplateError → unavailable
+    print("       (HA 里表现为:实体 = unavailable)")
+    out = show("旧 door_state(上报时间不是 datetime)", LEGACY_STATE_TPL, bad_seen)
+    if out is not None:
+        print("       ✗ 预期是抛异常(→ unavailable)")
+        failures += 1
+    else:
+        print("       ✓ 复现:渲染抛异常,HA 里实体变 unavailable")
+
+    # ③ 旧 readable:同一个表达式在 and 链末端 → 被短路救活
+    out = show("旧 readable(上报时间不是 datetime)", LEGACY_READABLE_TPL, bad_seen)
+    if out != "False":
+        print("       ✗ 预期是 'False' —— and 链短路救活了它")
+        failures += 1
+    else:
+        print("       ✓ 复现:同一个表达式,靠 and 短路活了下来 → 这就是那个不对称")
+
+    print("-" * 76)
+    print("新版模板(仓库里现在这份)在这两种输入下的表现:")
+    for label, mapping in (
+        ("门开着、10 秒前上报", open_fresh),
+        ("上报时间不是 datetime", bad_seen),
+    ):
+        for tpl in templates_from_disk():
+            try:
+                raw = render_raw(tpl["state"], mapping)
+                state = to_ha_state(tpl["platform"], raw)
+                print(f"  {tpl['unique_id']:<34} {label:<22} → {state!r}")
+                if tpl["platform"] == "sensor" and state not in ("OPEN", "CLOSED", "UNKNOWN"):
+                    print("       ✗ 状态值必须是 OPEN/CLOSED/UNKNOWN 之一")
+                    failures += 1
+            except Exception as exc:  # noqa: BLE001
+                print(f"  {tpl['unique_id']:<34} {label:<22} → ✗ {type(exc).__name__}: {exc}")
+                print("       ✗ 新版模板不应该再炸")
+                failures += 1
+    print("")
+    return failures
 
 
 def main():
     if not JSON_PATH.exists():
         print("❌ 找不到 tools/.ha-templates.json,先跑: node tools/dump-ha-templates.mjs")
         return 1
-    templates = json.loads(JSON_PATH.read_text(encoding="utf8"))
+    templates = templates_from_disk()
     if not templates:
         print("❌ 没有解析出任何模板")
         return 1
@@ -209,6 +351,8 @@ def main():
                 print("       ✗ HA 里这个实体会变成 unavailable")
                 failures += 1
         print("")
+
+    failures += legacy_regressions()
 
     print("=" * 76)
     if failures:

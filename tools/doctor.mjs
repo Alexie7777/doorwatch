@@ -23,6 +23,7 @@ import path from 'node:path';
 import http from 'node:http';
 import https from 'node:https';
 import process from 'node:process';
+import { loadTemplates } from './ha-templates.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 
@@ -66,52 +67,72 @@ if (args.help) {
 /* ------------------------------------------------------------------ *
  * HTTP:用 node:http/https 而不是 fetch,是为了能单独控制 rejectUnauthorized
  * ------------------------------------------------------------------ */
-function httpGet(url, { headers = {}, insecure = false, timeout = 8000 } = {}) {
+function httpRequest(url, {
+  method = 'GET',
+  headers = {},
+  body = null,
+  insecure = false,
+  timeout = 8000,
+} = {}) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
     const lib = u.protocol === 'https:' ? https : http;
+    const payload = body == null ? null : Buffer.from(body, 'utf8');
     const req = lib.request(
       u,
-      { method: 'GET', headers, timeout, rejectUnauthorized: !insecure },
+      {
+        method,
+        headers: payload
+          ? { ...headers, 'Content-Length': payload.length }
+          : headers,
+        timeout,
+        rejectUnauthorized: !insecure,
+      },
       (res) => {
-        let body = '';
+        let text = '';
         res.setEncoding('utf8');
-        res.on('data', (c) => { body += c; });
+        res.on('data', (c) => { text += c; });
         res.on('end', () => {
           let json = null;
-          try { json = JSON.parse(body); } catch { /* 不是 JSON,留给调用方处理 */ }
-          resolve({ status: res.statusCode, json, body });
+          try { json = JSON.parse(text); } catch { /* 不是 JSON,留给调用方处理 */ }
+          resolve({ status: res.statusCode, json, body: text });
         });
       },
     );
     req.on('timeout', () => req.destroy(new Error(`超时 ${timeout}ms`)));
     req.on('error', reject);
+    if (payload) req.write(payload);
     req.end();
   });
 }
 
 /**
- * 拿 JSON。两种常见情况会自动降级重试:
+ * 发一个请求,两种常见情况会自动降级重试:
  *   ① 自签证书 → 关掉证书校验再试一次
  *   ② 把 http 写成 https(HA 默认是 http)→ 换回 http 再试一次
- *      典型报错:wrong version number / EPROTO / tls_validate_record_header
+ *      典型报错:wrong version number / EPROTO / not a TLS / packet length too long
+ *
+ * ★ 所有对 HA / doorwatch 的请求都得走这里 ——
+ *   降级逻辑分散在各调用点的时候,一定会漏掉某几个。
+ *   (踩过一次:模板接口 POST 和错误日志 GET 漏了降级,直接 EPROTO。)
  */
-async function getJson(url, opts = {}) {
+async function requestWithFallback(url, opts = {}) {
   let res;
   try {
-    res = await httpGet(url, opts);
+    res = await httpRequest(url, opts);
   } catch (err) {
     const msg = err?.message ?? '';
     // ① 先判「https 写成了 http」—— 它和 ② 的报错都带 "SSL" 字样,
     //    但特征是 TLS 握手阶段的 wrong version number / EPROTO。
-    if (/wrong version number|EPROTO|not a TLS/i.test(msg) && url.startsWith('https:')) {
+    if (/wrong version number|EPROTO|not a TLS|packet length too long/i.test(msg)
+        && url.startsWith('https:')) {
       const plain = url.replace(/^https:/, 'http:');
-      const retry = await httpGet(plain, opts);
+      const retry = await httpRequest(plain, opts);
       retry.downgraded = true;
       transportNote = '地址写成了 https,已自动改用 http 重试';
       res = retry;
     } else if (/certificate|self[- ]signed|unable to verify/i.test(msg) && !opts.insecure) {
-      const retry = await httpGet(url, { ...opts, insecure: true });
+      const retry = await httpRequest(url, { ...opts, insecure: true });
       retry.selfSigned = true;
       transportNote = '证书是自签的,已跳过校验(生产环境建议换成正式证书)';
       res = retry;
@@ -119,9 +140,31 @@ async function getJson(url, opts = {}) {
       throw err;
     }
   }
+  return res;
+}
+
+/**
+ * 拿 JSON。返回的不是 JSON 或状态码不对 → 抛错。
+ */
+async function getJson(url, opts = {}) {
+  const res = await requestWithFallback(url, opts);
   if (res.status < 200 || res.status >= 300) throw new Error(`HTTP ${res.status}`);
   if (!res.json) throw new Error('返回的不是 JSON');
   return res.json;
+}
+
+/**
+ * POST 一个 JSON 到 HA(模板接口、动作接口都用得上)。
+ * 不走 getJson —— 模板接口出错时返回的是 HTTP 400 + 错误正文,
+ * 那正是我们最想要的东西,不能被当成异常吞掉。
+ */
+async function postJson(url, payload, opts = {}) {
+  return requestWithFallback(url, {
+    ...opts,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(opts.headers ?? {}) },
+    body: JSON.stringify(payload),
+  });
 }
 
 function age(ms) {
@@ -138,6 +181,14 @@ function age(ms) {
 function line(mark, text, extra = '') {
   console.log(`  ${mark} ${text}${extra ? `  ${extra}` : ''}`);
   if (mark === MARK.bad) problems += 1;
+}
+
+/** 降级提示只打印一次,免得同一句话在输出里刷屏 */
+const shownNotes = new Set();
+function reportTransportNote() {
+  if (!transportNote || shownNotes.has(transportNote)) return;
+  shownNotes.add(transportNote);
+  line(MARK.info, transportNote);
 }
 
 function section(title) {
@@ -213,16 +264,18 @@ if (!args.ha) {
   try {
     transportNote = null;
     const states = await getJson(`${args.ha}/api/states`, { headers: haHeaders, timeout: 10000 });
-    if (transportNote) line(MARK.info, transportNote);
+    reportTransportNote();
     const map = new Map(states.map((s) => [s.entity_id, s]));
 
     const st = map.get('sensor.doorwatch_it_office_door_state');
     if (!st) {
       line(MARK.bad, 'sensor.doorwatch_it_office_door_state 不存在', 'HA 的 templates.yaml 没生效');
+    } else if (st.state === 'unavailable') {
+      // ⚠️ 这一支必须排在「值不对」前面 —— 否则永远走不到这里,
+      //    「模板渲染抛异常了」这个最有用的提示就丢了。
+      line(MARK.bad, '门状态模板 = unavailable', '模板渲染抛异常了,原因见下面的错误日志');
     } else if (!['OPEN', 'CLOSED', 'UNKNOWN'].includes(st.state)) {
       line(MARK.bad, `门状态模板的值不对: "${st.state}"`, '只能是 OPEN / CLOSED / UNKNOWN');
-    } else if (st.state === 'unavailable') {
-      line(MARK.bad, '门状态模板 = unavailable', '模板渲染抛异常了,去 设置 → 工具 → 调试 看报错');
     } else {
       line(MARK.ok, `门状态模板 = ${st.state}`);
     }
@@ -241,6 +294,66 @@ if (!args.ha) {
     if (raw) {
       line(MARK.info, `原始门磁实体 = ${raw.state}`,
         `last_reported ${age(Date.parse(raw.last_reported ?? ''))}`);
+    }
+
+    // ---- 现场渲染:把仓库里的模板直接 POST 给 HA 的 /api/template ----
+    // 意义:不用「先改配置,再回头猜为什么炸」。
+    // 这份模板在**这台** HA 上此刻会渲染成什么,直接问 HA 自己;
+    // 渲染报错的话,HA 会把 TemplateError 原文还回来。
+    const { templates, source } = loadTemplates(ROOT);
+    if (!templates.length) {
+      line(MARK.info, '拿不到仓库里的模板', '先跑 node tools/dump-ha-templates.mjs');
+    } else {
+      for (const t of templates) {
+        const label = t.unique_id ?? t.name ?? '(未命名)';
+        if (!t.state) {
+          line(MARK.warn, `模板 ${label} 没有 state 字段`);
+          continue;
+        }
+        let res;
+        try {
+          res = await postJson(`${args.ha}/api/template`, { template: t.state }, {
+            headers: haHeaders,
+            timeout: 15000,
+          });
+        } catch (err) {
+          line(MARK.bad, `现场渲染 ${label} 失败`, err.message);
+          continue;
+        }
+        if (res.status === 200 && res.json && res.json.result !== undefined) {
+          const rawOut = String(res.json.result).trim();
+          // binary_sensor 平台会用 result_as_boolean() 把结果转成 on/off
+          const shown = t.platform === 'binary_sensor'
+            ? (['1', 'true', 'yes', 'on', 'enable', 'enabled'].includes(rawOut.toLowerCase()) ? 'on' : 'off')
+            : rawOut;
+          line(MARK.ok, `现场渲染 ${label}`, `→ ${shown}`);
+        } else {
+          const msg = res.json?.message ?? String(res.body ?? '').slice(0, 400) ?? `HTTP ${res.status}`;
+          line(MARK.bad, `现场渲染 ${label} 失败`, String(msg).replace(/\s+/g, ' ').trim());
+        }
+      }
+      reportTransportNote();
+    }
+
+    // ---- HA 错误日志:unavailable 的真正原因通常就写在这里 ----
+    try {
+      const logRes = await requestWithFallback(`${args.ha}/api/error_log`, { headers: haHeaders, timeout: 15000 });
+      const hits = String(logRes.body ?? '')
+        .split('\n')
+        .filter((l) => /doorwatch/i.test(l) || /Error rendering template/i.test(l) || /TemplateError/i.test(l));
+      const ours = hits.filter((l) => /doorwatch/i.test(l));
+      if (ours.length) {
+        line(MARK.bad, `HA 错误日志里有 ${ours.length} 条 doorwatch 相关的报错`, '看最后一条:');
+        for (const l of ours.slice(-3)) {
+          console.log(`     ↳ ${l.trim().slice(0, 300)}`);
+        }
+      } else if (hits.length) {
+        line(MARK.info, `错误日志里有 ${hits.length} 条模板报错,但都跟 doorwatch 无关`);
+      } else {
+        line(MARK.ok, 'HA 错误日志里没有模板相关的报错');
+      }
+    } catch (err) {
+      line(MARK.info, '读 HA 错误日志失败', err.message);
     }
 
     // 自动化加载了没、在不在跑 —— 这决定了「没消息」的两种可能:
