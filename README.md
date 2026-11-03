@@ -641,18 +641,46 @@ docker compose logs -f doorwatch
 
 ```bash
 curl http://127.0.0.1:8443/api/health
-# {"ok":true,"version":"1.0.0","doors":1,...}
+# {"ok":true,"version":"1.0.0","build":"1.0.0-lz3xk9","doors":1,...}
 ```
 
 > 容器里的构建上下文是仓库根目录,但 `.dockerignore` 已经把 `node_modules/`、
 > `data/`、`test/`、`docs/` 这些都排除了 —— 构建上下文只有几百 KB,不会卡在
 > 上传 `node_modules` 上。镜像里只装了 `aedes` + `mqtt` 两个运行时依赖。
 
-改完代码要生效:
+#### 更新代码(改完怎么让它生效)
 
 ```bash
-cd doorwatch && git pull && cd deploy && docker compose up -d --build
+cd /srv/doorwatch
+git pull                              # ① 先把代码拉下来
+git log --oneline -1                  # ② 确认拉到的是最新那次提交
+cd deploy
+docker compose up -d --build --force-recreate   # ③ 重新构建并重建容器
+docker compose ps                     # ④ STATUS 必须是 healthy
 ```
+
+**然后确认线上跑的确实是新代码** —— 这一步别省,「我明明重新部署了,页面怎么还是旧的」
+这种问题十有八九是容器没重建,或者手机浏览器拿着旧缓存:
+
+```bash
+# 首页里还有没有「管理」按钮 —— 新代码应该是 0
+curl -s http://127.0.0.1:8443/ | grep -c manage-btn
+
+# 二维码在不在 —— 应该是 200 和文件大小
+curl -s -o /dev/null -w '%{http_code} %{size_download}\n' http://127.0.0.1:8443/wechat-qr.jpg
+
+# 构建指纹 —— 和浏览器地址栏里 /app.js?v= 后面的那串应该是同一个
+curl -s http://127.0.0.1:8443/api/health
+```
+
+三条都对了,手机上还看到旧样子 → **是浏览器的 Service Worker 缓存**:
+关掉页面重新打开、下拉刷新;还不行就在浏览器设置里把这个站点的
+「缓存 / 站点数据」清掉再打开。(Service Worker 只在 HTTPS 或 localhost 下才注册,
+纯 HTTP 部署一般不会遇到这个问题。)
+
+> `docker compose up -d` **不带 `--build` 不会重新构建镜像** ——
+> 改了 `public/` 里的东西(样式、文案、二维码图片)时尤其容易踩:
+> 代码在仓库里更新了,镜像还是旧的。一定要带 `--build`。
 
 ### 方式一:Docker(推荐)
 

@@ -167,6 +167,10 @@ async function handleApi(req, res, url) {
     json(res, 200, {
       ok: true,
       version: config.version,
+      // 构建指纹:public/ 里任何文件改过都会变。
+      // 排查「我明明重新部署了,页面怎么还是旧的」时,先看这一行 ——
+      // 它和浏览器地址栏里 /app.js?v= 的那个值是同一个。
+      build: buildStamp(),
       uptimeSec: Math.round(process.uptime()),
       doors: listDoors().length,
       mqtt: brokerStatus(),
