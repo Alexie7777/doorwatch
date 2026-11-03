@@ -357,8 +357,8 @@ try {
     })()
   `);
   check(
-    '页脚显示 Powered By 不徒步 · nohike',
-    footerInfo.text.includes('Powered By 不徒步 · nohike'),
+    '页脚显示 Powered By 不徒步 · nohike | IT Dept BIPH',
+    footerInfo.text.includes('Powered By 不徒步 · nohike | IT Dept BIPH'),
     footerInfo.text.replace(/\s+/g, ' ').trim(),
   );
   const pageTitle = await cdp.eval('document.title');

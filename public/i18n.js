@@ -34,7 +34,7 @@ const DICT = {
     today: '今天:开 {open} 次 / 关 {close} 次',
     now: '现在',
     footerHint: '一眼知门况，免跑空一趟。',
-    poweredBy: 'Powered By 不徒步 · nohike',
+    poweredBy: 'Powered By 不徒步 · nohike | IT Dept BIPH',
 
     /* ---- 相对时间 ---- */
     relJustNow: '刚刚',
@@ -93,7 +93,7 @@ const DICT = {
     today: 'Today: {open} open / {close} closed',
     now: 'Now',
     footerHint: 'Glance before you leave, no need to grieve.',
-    poweredBy: 'Powered By 不徒步 · nohike',
+    poweredBy: 'Powered By 不徒步 · nohike | IT Dept BIPH',
 
     /* ---- 相对时间 ---- */
     relJustNow: 'just now',
