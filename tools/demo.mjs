@@ -56,8 +56,8 @@ const DEMO_DOORS = JSON.stringify({
       deviceId: 'it-office-door',
       openHint: 'IT 有人在,直接过来就行',
       openHintEn: 'Someone from IT is in — just come over',
-      closedHint: '门已关，IT 暂时不在，可联系值班微信',
-      closedHintEn: 'Door closed, IT is temporarily away. Contact the on-duty WeChat.',
+      closedHint: '门已关，IT 暂时不在，可联系[值班微信](wechat)',
+      closedHintEn: 'Door closed, IT is temporarily away. Contact [the on-duty WeChat](wechat).',
     },
     {
       id: 'server-room',

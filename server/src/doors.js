@@ -20,8 +20,8 @@ const DEFAULT_DOORS = [
     deviceId: 'it-office-door',
     openHint: 'IT 有人在,直接过来就行',
     openHintEn: 'Someone from IT is in — just come over',
-    closedHint: '门已关，IT 暂时不在，可联系值班微信',
-    closedHintEn: 'Door closed, IT is temporarily away. Contact the on-duty WeChat.',
+    closedHint: '门已关，IT 暂时不在，可联系[值班微信](wechat)',
+    closedHintEn: 'Door closed, IT is temporarily away. Contact [the on-duty WeChat](wechat).',
     unknownHint: '传感器没上线,状态未知 —— 请先联系 IT',
     unknownHintEn: 'Sensor offline, status unknown — please contact IT',
   },
@@ -48,7 +48,7 @@ function normalize(raw, index) {
     deviceId,
     openHint: String(raw.openHint ?? '门开着,可以过来').trim(),
     openHintEn: String(raw.openHintEn ?? raw.open_hint_en ?? '').trim(),
-    closedHint: String(raw.closedHint ?? '门已关，IT 暂时不在，可联系值班微信').trim(),
+    closedHint: String(raw.closedHint ?? '门已关，IT 暂时不在，可联系[值班微信](wechat)').trim(),
     closedHintEn: String(raw.closedHintEn ?? raw.closed_hint_en ?? '').trim(),
     // unknown 提示语以前是写死在 state.js 里的,挪到这里每扇门都能定制;
     // 不填就沿用以前那一句(见 state.js 的 DEFAULT_UNKNOWN_HINT)。

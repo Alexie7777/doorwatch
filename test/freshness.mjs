@@ -232,6 +232,43 @@ try {
   check('中文 unknown 用中文兜底', pub.i18n.zh.unknown === '传感器没上线,状态未知 —— 请先联系 IT');
   check('旧的 hints 结构没被破坏(免得弄坏已有文档和测试)', pub.hints.open === '中文开着');
 
+  // --- 值班微信二维码 ---
+  // 提示语里的 [值班微信](wechat) 标记要原样透传(前端靠它认出该把哪一段变成按钮),
+  // 二维码路径也要一起下发 —— 前端不该自己猜路径。
+  console.log('\n[test] 值班微信二维码');
+  syncRegistry([
+    {
+      id: 'it-office',
+      name: 'IT 办公室',
+      location: 'A512',
+      deviceId: DEVICE,
+      openHint: '中文开着',
+      closedHint: '门已关，可联系[值班微信](wechat)',
+      closedHintEn: 'Contact [the on-duty WeChat](wechat).',
+    },
+  ]);
+  pub = toPublic(getDoorByDevice(DEVICE), t0 + 220_000);
+  check(
+    '★ 提示语里的 (wechat) 标记原样透传',
+    pub.i18n.zh.closed === '门已关，可联系[值班微信](wechat)',
+    `实际="${pub.i18n.zh.closed}"`,
+  );
+  check(
+    '★ 英文提示语里的 (wechat) 标记也透传',
+    pub.i18n.en.closed === 'Contact [the on-duty WeChat](wechat).',
+    `实际="${pub.i18n.en.closed}"`,
+  );
+  check(
+    '★ 二维码路径一起下发',
+    typeof pub.wechatQr === 'string' && pub.wechatQr.length > 0,
+    `实际="${pub.wechatQr}"`,
+  );
+  check(
+    '★ 默认指向仓库里的那张二维码',
+    /wechat-qr\.(jpg|png)$/.test(pub.wechatQr ?? ''),
+    `实际="${pub.wechatQr}"`,
+  );
+
   // 只配了中文提示、没配英文时的回落
   syncRegistry([
     {

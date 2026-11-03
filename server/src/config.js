@@ -114,6 +114,14 @@ export const config = {
   /** 隐藏具体时间,只显示开/关。用于不想对外暴露人员出入时间的场景 */
   hideTimes: envBool('HIDE_TIMES', false),
 
+  /**
+   * 值班微信的二维码图片路径。
+   *
+   * 提示语里写 `[值班微信](wechat)`,前端就会把「值班微信」渲染成一个可点的按钮,
+   * 点一下弹出这个二维码。留空 = 不配二维码,那句话就当普通文字显示。
+   */
+  wechatQr: env('WECHAT_QR', '/wechat-qr.jpg'),
+
   /** 写操作密钥。留空则首次启动自动生成并写入 dataDir/ADMIN_KEY.txt */
   adminKey: env('ADMIN_KEY', ''),
 

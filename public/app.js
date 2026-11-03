@@ -11,7 +11,6 @@ const $ = (sel) => document.querySelector(sel);
 const state = {
   doors: [],
   connected: false,
-  adminKey: localStorage.getItem('dw_admin_key') ?? '',
   events: null,
 };
 
@@ -52,6 +51,62 @@ function esc(s) {
     /[&<>"']/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
   );
+}
+
+/**
+ * 把提示语渲染成 HTML。
+ *
+ * 提示语里可以写 `[值班微信](wechat)`,这一段会变成一个可点的按钮,
+ * 点开弹出值班微信的二维码。写法之外的全是普通文字(一律转义)。
+ *
+ * 为什么用这种「方括号+圆括号」的写法,而不是一个单独的字段:
+ *   ① 链接的**文字**就写在句子里,中英文各写各的,不用再加两个字段;
+ *   ② 加字段就得改数据库表结构,而提示语本来就是自由文本,这里多几行解析就够。
+ *
+ * @param {string} hint   提示语原文
+ * @param {string} qrPath 二维码图片路径;没配就当普通文字显示
+ */
+function renderHint(hint, qrPath) {
+  const text = String(hint ?? '');
+  if (!text) return '';
+
+  const re = /\[([^\]\n]+)\]\(wechat\)/g;
+  let out = '';
+  let last = 0;
+  for (const m of text.matchAll(re)) {
+    out += esc(text.slice(last, m.index));
+    out += qrPath
+      ? `<button type="button" class="qr-link" data-qr="${esc(qrPath)}">${esc(m[1])}</button>`
+      : esc(m[1]);
+    last = m.index + m[0].length;
+  }
+  out += esc(text.slice(last));
+  return out;
+}
+
+/**
+ * 值班微信二维码弹层。
+ *
+ * 整站就一个二维码,所以图片路径由服务端下发(door.wechatQr),
+ * 换人值班时只要换掉那张图片,不用改任何代码。
+ */
+function openQr(src) {
+  if (!src) return;
+  const img = $('#qr-img');
+  if (!img) return;
+  img.src = src;
+  img.alt = t('qrAlt');
+  const cap = $('#qr-caption');
+  if (cap) cap.textContent = t('qrCaption');
+  const modal = $('#qr-modal');
+  if (modal) modal.hidden = false;
+}
+
+function closeQr() {
+  const modal = $('#qr-modal');
+  if (modal) modal.hidden = true;
+  const img = $('#qr-img');
+  if (img) img.removeAttribute('src');
 }
 
 function relTime(ts) {
@@ -183,7 +238,7 @@ function render() {
           <div class="state__icon">${meta.icon}</div>
           <div>
             <div class="state__title">${t(meta.titleKey)}</div>
-            <p class="state__hint">${esc(hint)}</p>
+            <p class="state__hint">${renderHint(hint, door.wechatQr)}</p>
           </div>
         </div>
 
@@ -246,7 +301,7 @@ function updateTitle() {
 /**
  * 把页面上所有"静态"文案刷成当前语言。
  *
- * 卡片内容由 render() 重画,管理面板由 renderManageBody() 重画,
+ * 卡片内容由 render() 重画,
  * 这里只管那些不随数据变的元素:标题、按钮标签、页脚。
  */
 function applyLang() {
@@ -261,13 +316,7 @@ function applyLang() {
     langBtn.setAttribute('aria-label', t('langSwitch'));
   }
   $('#refresh')?.setAttribute('aria-label', t('refresh'));
-  const manageBtn = $('#manage-btn');
-  if (manageBtn) {
-    manageBtn.textContent = t('manage');
-    manageBtn.setAttribute('aria-label', t('manage'));
-  }
-  $('#manage-title') && ($('#manage-title').textContent = t('manage'));
-  $('#manage-close')?.setAttribute('aria-label', t('close'));
+  $('#qr-close')?.setAttribute('aria-label', t('close'));
 
   const hint = $('#footer-hint');
   if (hint) hint.textContent = t('footerHint');
@@ -415,135 +464,26 @@ document.addEventListener('visibilitychange', () => {
 });
 
 /* ------------------------------------------------------------------ *
- * 管理面板
- * ------------------------------------------------------------------ */
-
-async function apiCall(method, path, body) {
-  const res = await fetch(path, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Admin-Key': state.adminKey,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const err = new Error(data.error ?? `HTTP ${res.status}`);
-    // 服务端带上 errorKey,客户端就能翻成当前语言
-    err.errorKey = data.errorKey ?? '';
-    throw err;
-  }
-  return data;
-}
-
-/**
- * 把服务端的错误翻成当前语言的文案。
- * 拿不到 errorKey 就退回原始 error 文本(至少还是个能看懂的中文)。
- */
-function translateError(err) {
-  if (err?.errorKey) {
-    const s = t(err.errorKey);
-    if (s && s !== err.errorKey) return s;
-  }
-  return err?.message ?? t('requestFailed');
-}
-
-function renderManageBody() {
-  const body = $('#manage-body');
-  if (!body) return;
-
-  if (!state.adminKey) {
-    body.innerHTML = `
-      <p>${t('manageHelp')}</p>
-      <input id="key-input" type="password" placeholder="${esc(t('adminKeyPlaceholder'))}" autocomplete="off" />
-      <div class="btn-row"><button class="btn btn--primary" id="key-verify">${t('unlock')}</button></div>
-      <div class="msg" id="manage-msg"></div>
-    `;
-
-    $('#key-verify').addEventListener('click', async () => {
-      const key = $('#key-input').value.trim();
-      const msg = $('#manage-msg');
-      if (!key) {
-        msg.className = 'msg msg--err';
-        msg.textContent = t('needKey');
-        return;
-      }
-      // 先拿这个密钥去问服务端:对就留下,不对就丢掉
-      state.adminKey = key;
-      try {
-        await apiCall('GET', '/api/admin/verify');
-        localStorage.setItem('dw_admin_key', key);
-        msg.className = 'msg msg--ok';
-        msg.textContent = t('unlocked');
-        renderManageBody();
-      } catch (err) {
-        state.adminKey = '';
-        localStorage.removeItem('dw_admin_key');
-        msg.className = 'msg msg--err';
-        // 密钥不对是这个面板里最常见的错,单独给一句话
-        msg.textContent = err?.errorKey === 'bad_admin_key' ? t('badKey') : translateError(err);
-      }
-    });
-    return;
-  }
-
-  body.innerHTML = `
-    <p>${t('unlockedHelp')}</p>
-    ${state.doors
-      .map((d) => {
-        const loc = doorLocale(d);
-        const name = loc.name ?? d.name;
-        return `
-      <div class="door-admin">
-        <div class="door-admin__name">${esc(name)}</div>
-        <div class="btn-row">
-          <button class="btn" data-act="closed" data-id="${esc(d.id)}">${t('overrideClosed')}</button>
-          <button class="btn" data-act="open" data-id="${esc(d.id)}">${t('overrideOpen')}</button>
-          <button class="btn" data-act="clear" data-id="${esc(d.id)}">${t('clearOverride')}</button>
-        </div>
-      </div>`;
-      })
-      .join('')}
-    <div class="msg" id="manage-msg"></div>
-  `;
-
-  body.querySelectorAll('button[data-act]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const msg = $('#manage-msg');
-      const { act, id } = btn.dataset;
-      try {
-        if (act === 'clear') await apiCall('DELETE', `/api/doors/${id}/override`);
-        else await apiCall('POST', `/api/doors/${id}/override`, { state: act, hours: 4 });
-        msg.className = 'msg msg--ok';
-        msg.textContent = t('applied');
-        await loadDoors();
-      } catch (err) {
-        msg.className = 'msg msg--err';
-        msg.textContent = translateError(err);
-      }
-    });
-  });
-}
-
-function openManage() {
-  $('#manage-sheet').hidden = false;
-  renderManageBody();
-}
-
-function closeManage() {
-  $('#manage-sheet').hidden = true;
-}
-
-/* ------------------------------------------------------------------ *
  * 启动
  * ------------------------------------------------------------------ */
 
 $('#refresh').addEventListener('click', loadDoors);
-$('#manage-btn').addEventListener('click', openManage);
-$('#manage-close').addEventListener('click', closeManage);
-$('#manage-sheet').addEventListener('click', (e) => {
-  if (e.target === $('#manage-sheet')) closeManage();
+
+// 点提示语里的「值班微信」→ 弹出二维码
+document.addEventListener('click', (e) => {
+  const link = e.target.closest?.('.qr-link');
+  if (link) {
+    e.preventDefault();
+    openQr(link.dataset.qr);
+    return;
+  }
+  // 点遮罩空白处关闭
+  if (e.target === $('#qr-modal')) closeQr();
+});
+$('#qr-close')?.addEventListener('click', closeQr);
+// Esc 关闭(桌面端顺手)
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeQr();
 });
 
 // 语言切换:写进 localStorage,订阅者把整页重画一遍
@@ -554,7 +494,6 @@ $('#lang-toggle').addEventListener('click', () => {
 onLangChange(() => {
   applyLang();
   render();
-  renderManageBody();
 });
 
 // 先把静态文案刷成当前语言,再拉数据

@@ -104,22 +104,7 @@ body {
   cursor: pointer;
 }
 
-/* 「管理」按钮:从页脚挪到页头,样式和语言按钮一套 */
-.topbar__manage {
-  flex: none;
-  height: 32px;
-  padding: 0 11px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--bg-card);
-  color: var(--text-dim);
-  font-size: 12px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.topbar__lang:active,
-.topbar__manage:active {
+.topbar__lang:active {
   transform: scale(0.97);
 }
 
@@ -308,6 +293,24 @@ body {
   color: var(--text-dim);
 }
 
+/* 提示语里的「值班微信」—— 点一下弹二维码 */
+.qr-link {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: #58a6ff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.qr-link:active {
+  opacity: 0.7;
+}
+
 .door__meta {
   margin-top: 14px;
   display: flex;
@@ -403,130 +406,65 @@ body {
   letter-spacing: 0.4px;
 }
 
-/* ---------------- 管理面板 ---------------- */
+/* ---------------- 值班微信二维码弹层 ---------------- */
 
-.sheet {
+.qr-modal {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
   z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.72);
   backdrop-filter: blur(2px);
 }
 
 /* 作者样式里的 display 会盖掉 UA 的 [hidden]{display:none},必须显式补一条 */
-.sheet[hidden] {
+.qr-modal[hidden] {
   display: none;
 }
 
-.sheet__panel {
+.qr-modal__card {
+  position: relative;
   width: 100%;
-  max-width: 520px;
+  max-width: 300px;
+  /* 顶部多留一截给关闭按钮,别让它压在二维码的白块上 */
+  padding: 32px 18px 16px;
   background: var(--bg-card);
-  border-radius: 20px 20px 0 0;
-  border-top: 1px solid var(--line);
-  padding: 16px 16px calc(20px + var(--safe-b));
-  max-height: 82dvh;
-  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 18px;
 }
 
-.sheet__head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.sheet__head h2 {
-  margin: 0;
-  font-size: 16px;
-}
-
-.sheet__close {
-  background: none;
-  border: none;
-  color: var(--text-dim);
-  font-size: 18px;
-  cursor: pointer;
+.qr-modal__close {
+  position: absolute;
+  top: 6px;
+  right: 10px;
   padding: 4px 8px;
-}
-
-.sheet__body {
-  font-size: 13px;
+  border: none;
+  background: none;
   color: var(--text-dim);
-}
-
-.sheet__body h3 {
-  font-size: 13px;
-  color: var(--text);
-  margin: 16px 0 8px;
-}
-
-.sheet__body input {
-  width: 100%;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: var(--bg);
-  color: var(--text);
-  font-size: 14px;
-  font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
-}
-
-.btn-row {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 8px;
-}
-
-.btn {
-  padding: 8px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: var(--bg-card-2);
-  color: var(--text);
-  font-size: 13px;
+  font-size: 16px;
+  line-height: 1;
   cursor: pointer;
 }
 
-.btn--primary {
-  background: #1f6feb;
-  border-color: #1f6feb;
-  color: #fff;
-}
-
-.btn:active {
-  transform: scale(0.98);
-}
-
-.msg {
-  margin-top: 8px;
-  font-size: 12px;
-  min-height: 16px;
-}
-
-.msg--ok {
-  color: #56d364;
-}
-.msg--err {
-  color: #f85149;
-}
-
-.door-admin {
-  border: 1px solid var(--line);
+/* 二维码是白底黑码,留一圈白边,不然在深色背景上扫不出来 */
+.qr-modal__img {
+  display: block;
+  width: 100%;
+  max-width: 264px;
+  margin: 0 auto;
+  padding: 10px;
   border-radius: 12px;
-  padding: 10px 12px;
-  margin-bottom: 10px;
-  background: var(--bg-card-2);
+  background: #fff;
 }
 
-.door-admin__name {
-  color: var(--text);
-  font-weight: 600;
-  margin-bottom: 6px;
+.qr-modal__caption {
+  margin: 12px 0 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-dim);
 }
 
 @media (min-width: 620px) {

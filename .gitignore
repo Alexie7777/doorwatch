@@ -23,6 +23,7 @@ test/artifacts/*
 !test/artifacts/dashboard-desktop.png
 !test/artifacts/dashboard-zh.png
 !test/artifacts/dashboard-en.png
+!test/artifacts/wechat-qr-modal.png
 
 # 模板仿真器生成的中间文件(由 tools/dump-ha-templates.mjs 产出)
 tools/.ha-templates.json

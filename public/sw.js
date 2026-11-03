@@ -10,15 +10,23 @@ const CACHE = 'doorwatch-v5';
 // 只预缓存外壳。style.css / app.js 在 index.html 里带 ?v= 版本戳,
 // 运行时按带戳的 URL 缓存,避免同一份资源在缓存里存两份。
 // i18n.js 是 app.js 的模块依赖,路径不带版本戳,这里一并预缓存,离线才开得了。
-const SHELL = ['/', '/index.html', '/icon.svg', '/manifest.webmanifest', '/i18n.js'];
+// wechat-qr.jpg 也预缓存 —— 断网时同事照样能扫到值班微信。
+const SHELL = [
+  '/',
+  '/index.html',
+  '/icon.svg',
+  '/manifest.webmanifest',
+  '/i18n.js',
+  '/wechat-qr.jpg',
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
       .open(CACHE)
-      .then((cache) => cache.addAll(SHELL))
-      .then(() => self.skipWaiting())
-      .catch(() => self.skipWaiting()),
+      // 逐个缓存:某一个文件 404 了,不该把整份外壳都拖下水
+      .then((cache) => Promise.allSettled(SHELL.map((u) => cache.add(u))))
+      .then(() => self.skipWaiting()),
   );
 });
 

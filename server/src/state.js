@@ -156,6 +156,8 @@ export function toPublic(door, now = Date.now()) {
     batteryAt: door.battery_at ?? null,
     // 前端据此区分"时间被脱敏隐藏"和"本来就没有记录"
     timesHidden: config.hideTimes,
+    // 值班微信二维码。提示语里的 [xxx](wechat) 会被渲染成按钮,点开就是这张图。
+    wechatQr: config.wechatQr,
     // hints 保留不动(免得破坏已有测试和文档)
     hints: {
       open: door.open_hint,

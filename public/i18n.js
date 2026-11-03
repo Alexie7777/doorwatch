@@ -49,21 +49,11 @@ const DICT = {
     /* ---- 绝对时间 ---- */
     dateFull: '{month}{day}日 {time}',
 
-    /* ---- 管理面板 ---- */
-    manage: '管理',
-    manageHelp: '输入管理密钥(服务器 data/ADMIN_KEY.txt 里那个)以解锁写操作。',
-    adminKeyPlaceholder: '管理密钥',
-    unlock: '解锁',
-    needKey: '请输入密钥',
-    badKey: '密钥不正确',
-    unlocked: '已解锁',
-    unlockedHelp: '已解锁。置顶用于特殊情况(如全员出差),会覆盖传感器状态。',
-    overrideClosed: '置顶为关门 4 小时',
-    overrideOpen: '置顶为开门 4 小时',
-    clearOverride: '取消置顶',
+    /* ---- 值班微信二维码 ---- */
+    qrCaption: '扫码加值班微信,门关着的时候直接问 TA',
+    qrAlt: '值班微信二维码',
     close: '关闭',
     langSwitch: '切换语言',
-    applied: '已生效',
 
     /* ---- 杂项 ---- */
     refresh: '刷新',
@@ -118,23 +108,11 @@ const DICT = {
     /* ---- 绝对时间 ---- */
     dateFull: '{month} {day}, {time}',
 
-    /* ---- 管理面板 ---- */
-    manage: 'Manage',
-    manageHelp:
-      "Enter the admin key (the one in the server's `data/ADMIN_KEY.txt`) to unlock write operations.",
-    adminKeyPlaceholder: 'Admin key',
-    unlock: 'Unlock',
-    needKey: 'Please enter the key',
-    badKey: 'Incorrect key',
-    unlocked: 'Unlocked',
-    unlockedHelp:
-      'Unlocked. Override is for special cases (e.g. everyone is away) and overrides the sensor state.',
-    overrideClosed: 'Override: Closed for 4h',
-    overrideOpen: 'Override: Open for 4h',
-    clearOverride: 'Clear override',
+    /* ---- 值班微信二维码 ---- */
+    qrCaption: 'Scan to add the on-duty WeChat contact',
+    qrAlt: 'On-duty WeChat QR code',
     close: 'Close',
     langSwitch: 'Switch language',
-    applied: 'Applied',
 
     /* ---- 杂项 ---- */
     refresh: 'Refresh',

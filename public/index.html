@@ -26,8 +26,6 @@
         </div>
       </div>
       <div class="topbar__actions">
-        <!-- 「管理」以前在页脚,页脚腾给品牌署名之后挪到页头 -->
-        <button class="topbar__manage" id="manage-btn" type="button">管理</button>
         <!-- 语言切换:按钮上显示的是另一种语言的名字 -->
         <button class="topbar__lang" id="lang-toggle" type="button" aria-label="切换语言">
           EN
@@ -48,13 +46,12 @@
       <p class="footer__brand" id="footer-brand">Powered By IT Dept</p>
     </footer>
 
-    <div class="sheet" id="manage-sheet" hidden>
-      <div class="sheet__panel">
-        <div class="sheet__head">
-          <h2 id="manage-title">管理</h2>
-          <button class="sheet__close" id="manage-close" type="button" aria-label="关闭">✕</button>
-        </div>
-        <div class="sheet__body" id="manage-body"></div>
+    <!-- 值班微信二维码:点提示语里的「值班微信」弹出来 -->
+    <div class="qr-modal" id="qr-modal" hidden>
+      <div class="qr-modal__card">
+        <button class="qr-modal__close" id="qr-close" type="button" aria-label="关闭">✕</button>
+        <img class="qr-modal__img" id="qr-img" alt="" />
+        <p class="qr-modal__caption" id="qr-caption"></p>
       </div>
     </div>
 

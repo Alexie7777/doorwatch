@@ -100,7 +100,7 @@
 
 ```
 ┌────────────────────────────────────────┐
-│ ●  IT 在岗状态            [管理][EN][●]│
+│ ●  IT 在岗状态                  [EN][●]│
 ├────────────────────────────────────────┤
 │ IT 办公室  A512                [传感器在线]│
 │   🔓 门开着                            │
@@ -123,6 +123,7 @@
 | 「心跳」 | 传感器最后一次上报是什么时候 —— **心跳停了就说明传感器死了** |
 | 「电量 87%」徽章 | 门磁电池电量。**≤20% 会高亮**(琥珀/红色)。超过 7 天没更新就**不显示** —— 宁可没有,也不要给一个看着正常、其实早就过期的数字 |
 | 下面那条彩色条 | 今天的开关分布,一眼看出什么时候忙 |
+| 提示语里蓝色的「值班微信」 | 点一下弹出值班微信的二维码,扫了就能直接问 |
 | 页头右上角 `EN` / `中` 按钮 | 切换中英文。中文界面显示 `EN`,英文界面显示 `中` |
 
 ### 5. 中英文切换
@@ -141,28 +142,28 @@
 - 默认中文。第一次打开的外籍同事点一下 `EN` 就变英文,不用改服务器设置。
 - 门名、位置、提示语两套都由服务端一起下发(`/api/doors` 里的 `i18n.zh` / `i18n.en`),
   **英文那份缺了就自动回退到中文那份**,不会出现空白。
-- 管理面板也跟着换语言,按钮、提示、错误信息都是当前语言的。
 
-### 6. 管理面板:人工置顶
+### 6. 值班微信二维码
 
-看板页头右上角「管理」→ 输入管理密钥 → 可以把某扇门**置顶**成「开门」或「关门」4 小时。
+门关着的时候,卡片上那句「可联系**值班微信**」里的「值班微信」是**蓝色的可点文字** ——
+点一下就弹出值班微信的二维码,同事拿手机扫一下就能直接问,不用抄微信号、不用加好友。
 
-**什么时候用**:
-- 全员出差,门确实锁着,但传感器刚好掉线 → 置顶「关门」,免得所有人看到「未知」都来问
-- 换门磁 / 装修期间,传感器本来就不可信
+![值班微信二维码](test/artifacts/wechat-qr-modal.png)
 
-⚠️ 置顶会**覆盖**传感器状态,4 小时后自动失效。传感器恢复后如果还置着,记得「取消置顶」。
+怎么改:
 
-管理密钥在服务器上取:
+| 想改什么 | 改哪儿 |
+|---|---|
+| 二维码图片 | 换掉 `public/wechat-qr.jpg`(或用 `WECHAT_QR` 环境变量指到别的路径) |
+| 那句话 | `config/doors.json` 里的 `closedHint` / `closedHintEn` |
+| 谁值班 | 只换图片就行,不用改代码 |
 
-```bash
-cd doorwatch/deploy
-docker compose exec doorwatch cat /data/ADMIN_KEY.txt
-```
+> 提示语里 `[值班微信](wechat)` 这个写法是关键:方括号里是**点下去显示的文字**,
+> 圆括号里是**动作名**。写成 `[值班微信](wechat)`,前端就把这一段变成按钮,
+> 其余部分照常当普通文字。想加第二个链接就再写一个 `[别的文字](别的动作)`,
+> 但目前只认 `wechat` 这一个动作。
 
-(也可以直接 `cat` 数据卷里的 `ADMIN_KEY.txt`;容器重建后密钥不变,除非你显式设了 `ADMIN_KEY`。)
-
-### 6. 发给同事
+### 7. 发给同事
 
 把 `http://<服务器IP>:8443` 发到群里就行 —— **读接口免登录**,谁都能看。
 
@@ -170,7 +171,7 @@ docker compose exec doorwatch cat /data/ADMIN_KEY.txt
 这是特意这么配的:微信内置浏览器遇到自签证书会直接甩一句「无法访问此网站」,
 连「高级 → 继续前往」那个按钮都不给,链接就废了 —— 每年都有人为这个折腾一下午。
 
-### 7. 确认一切正常 —— 一条命令体检整条链路
+### 8. 确认一切正常 —— 一条命令体检整条链路
 
 链路有 5 环(HTTP 服务端 → MQTT → 看板 → HA 模板 → deviceId 对齐),
 断在哪一环现象都是「看板一直显示未知」。用这个工具一次查完,直接告诉你断在哪:
@@ -237,7 +238,7 @@ curl http://127.0.0.1:8443/api/health
 # {"ok":true,"version":"1.0.0","doors":3,...}
 ```
 
-### 8. 常用命令速查
+### 9. 常用命令速查
 
 | 想干什么 | 命令 |
 |---|---|
@@ -333,7 +334,7 @@ node tools/simulate.mjs --drop                            # 模拟传感器掉�
 
 ```bash
 node test/smoke.mjs   # 端到端:服务 + MQTT + 状态机 + 鉴权
-node test/ui.mjs      # 浏览器 UI:手机尺寸渲染、点管理、解锁、置顶
+node test/ui.mjs      # 浏览器 UI:手机尺寸渲染、中英切换、值班微信二维码
 ```
 
 `test/ui.mjs` 用 Chrome DevTools Protocol 直接驱动真实浏览器,不需要装 Playwright,
@@ -738,7 +739,8 @@ cd deploy && docker compose up -d
 3. 写个公告,附上链接;iOS Safari「分享 → 添加到主屏幕」就能变成一个桌面图标
 
 **读接口是免登录的**(内网即可访问),这样才有人愿意用。
-写操作(人工置顶、webhook)需要管理密钥。
+看板本身**是纯只读的** —— 页面上没有任何能改状态的入口。
+需要写数据(接门禁 webhook、人工置顶)时,用 API,需要管理密钥。
 
 ---
 
@@ -759,6 +761,7 @@ cd deploy && docker compose up -d
 | `ONLINE_TIMEOUT_MS` | `180000` | 心跳超时(毫秒),超时即判定离线 |
 | `BATTERY_TIMEOUT_MS` | `604800000` | 电量读数有效期(毫秒,默认 7 天),超期就不认这个数字 |
 | `HIDE_TIMES` | `false` | 隐藏具体时间,只显示开/关 |
+| `WECHAT_QR` | `/wechat-qr.jpg` | 值班微信二维码图片路径 |
 | `ADMIN_KEY` | 空 | 留空则自动生成,写到 `$DATA_DIR/ADMIN_KEY.txt` |
 | `DOORS_JSON` | 空 | 直接用 JSON 配门禁(容器部署方便) |
 | `DOORS_FILE` | `./config/doors.json` | 门禁登记表文件 |
@@ -777,8 +780,8 @@ cd deploy && docker compose up -d
       "deviceId": "it-office-door",
       "openHint": "IT 有人在,直接过来就行",
       "openHintEn": "Someone from IT is in — just come over",
-      "closedHint": "门已关，IT 暂时不在，可联系值班微信",
-      "closedHintEn": "Door closed, IT is temporarily away. Contact the on-duty WeChat.",
+      "closedHint": "门已关，IT 暂时不在，可联系[值班微信](wechat)",
+      "closedHintEn": "Door closed, IT is temporarily away. Contact [the on-duty WeChat](wechat).",
       "unknownHint": "传感器没上线,状态未知 —— 请先联系 IT",
       "unknownHintEn": "Sensor offline, status unknown — please contact IT"
     }
@@ -856,6 +859,11 @@ cd deploy && docker compose up -d
 
 密钥通过 `X-Admin-Key` 头、`Authorization: Bearer <key>` 头或 `?key=` 传。
 
+> 这几个写接口**只在 API 层面存在,界面上没有入口** —— 看板是纯只读的,
+> 页面上连管理密钥都不碰。留着的理由:门禁 webhook 需要一个推状态的通道,
+> 人工置顶在换传感器那种特殊时期也有用(用 `curl` 调)。
+> 密钥在服务器上取:`docker compose exec doorwatch cat /data/ADMIN_KEY.txt`。
+
 **接学校现有门禁系统?** 如果门禁系统能推 webhook,用 `POST /api/doors/:id/state` 接进来就行:
 
 ```bash
@@ -884,8 +892,6 @@ curl -X POST http://服务器:8443/api/doors/it-office/override \
   -H "X-Admin-Key: $KEY" -H "Content-Type: application/json" \
   -d '{"state":"closed","hours":48}'
 ```
-
-看板页头的「管理」按钮里也能直接点,更方便。
 
 **看历史数据**:SQLite 库在 `$DATA_DIR/doorwatch.db`,
 
@@ -998,7 +1004,8 @@ node tools/check-ports.mjs --kill   # 确认是自己上次的残留后再清
 或者固件里把 `inverted` 改成 `true`。
 
 **Q:老师会不会随便点坏?**
-读操作免登录,改不了任何东西。要改东西(置顶)需要管理密钥,存在浏览器本地。
+不会 —— 看板是**纯只读**的,页面上没有任何能改状态的地方,连管理密钥都不碰。
+（服务端那几个写接口是留给门禁 webhook 和人工置顶脚本用的,不在界面上露出来。）
 
 **Q:能看到门开没开,会不会暴露"IT 什么时候在"?**
 默认会显示具体时间。如果不想这样,把 `HIDE_TIMES=true` 打开,

@@ -3,11 +3,11 @@
  * 看板 UI 自动化测试(Chrome DevTools Protocol,不需要装 Playwright)。
  *
  * 覆盖真实用户路径:
- *   1. 手机尺寸(390x844)下页面正常渲染,三扇门状态正确
- *   2. 点"管理"能拉起管理面板
- *   3. 输入管理密钥能解锁
- *   4. 点"置顶为关门"后,卡片出现"人工置顶"标记并覆盖传感器状态
- *   5. 截手机版效果图到 test/artifacts/
+ *   1. 手机尺寸(390x844)下页面正常渲染,门状态正确
+ *   2. 页面是**纯只读**的:没有「管理」按钮、没有管理面板、不碰管理密钥
+ *   3. 中英文切换:文案、徽章、页脚全部跟着换
+ *   4. 关门提示语里的「值班微信」可点,点了弹出值班微信二维码
+ *   5. 截手机版 / 桌面版效果图到 test/artifacts/
  *
  * 运行: node test/ui.mjs
  */
@@ -199,8 +199,9 @@ try {
               deviceId: 'it-office-door',
               openHint: 'IT 有人在,直接过来就行',
               openHintEn: 'Someone from IT is in — just come over',
-              closedHint: '门已关，IT 暂时不在，可联系值班微信',
-              closedHintEn: 'Door closed, IT is temporarily away. Contact the on-duty WeChat.',
+              closedHint: '门已关，IT 暂时不在，可联系[值班微信](wechat)',
+              closedHintEn:
+                'Door closed, IT is temporarily away. Contact [the on-duty WeChat](wechat).',
             },
             {
               id: 'server-room',
@@ -372,8 +373,15 @@ try {
     '★ 页脚没有「管理」',
     !footerInfo.text.includes('管理') && !footerInfo.hasManageInFooter,
   );
-  const headerManage = await cdp.eval('!!document.querySelector(".topbar #manage-btn")');
-  check('★「管理」按钮挪到了页头', headerManage === true);
+  // ★「管理」按钮整个删掉了 —— 看板现在只读,没有任何写入口
+  const headerManage = await cdp.eval('!!document.querySelector("#manage-btn")');
+  check('★ 页头没有「管理」按钮', headerManage === false);
+  const manageSheet = await cdp.eval('!!document.querySelector("#manage-sheet")');
+  check('★ 没有管理面板', manageSheet === false);
+  const adminKeyInDom = await cdp.eval(
+    'document.documentElement.innerHTML.includes("dw_admin_key")',
+  );
+  check('★ 前端不再碰管理密钥', adminKeyInDom === false);
 
   // 页头副标题(「有人值班,可以直接过去」)已经删掉了 —— 门卡片里本来就有这句,
   // 页头再说一遍是重复。钉住它别被加回来。
@@ -416,8 +424,8 @@ try {
   check('电量徽章变成英文', enBadge === 'Battery 87%', `实际="${enBadge}"`);
   const enToggle = await cdp.eval('document.querySelector("#lang-toggle")?.textContent?.trim()');
   check('切换按钮显示另一种语言的名字', enToggle === '中', `实际="${enToggle}"`);
-  const enManage = await cdp.eval('document.querySelector("#manage-btn")?.textContent?.trim()');
-  check('页头「管理」按钮变成英文 Manage', enManage === 'Manage', `实际="${enManage}"`);
+  const enManage = await cdp.eval('!!document.querySelector("#manage-btn")');
+  check('★ 英文界面也没有「管理」按钮', enManage === false);
   const enMeta = await cdp.eval(
     'document.querySelector("article.door .door__meta")?.innerText?.replace(/\\s+/g, " ")?.trim()',
   );
@@ -487,65 +495,84 @@ try {
   fs.writeFileSync(shotZhPath, Buffer.from(shotZh.data, 'base64'));
   check('中文看板截图已生成', fs.existsSync(shotZhPath), shotZhPath);
 
-  // 5. 点"管理"
-  await cdp.eval('document.querySelector("#manage-btn").click()');
-  await sleep(400);
-  const sheetOpen = await cdp.eval(
-    '!document.querySelector("#manage-sheet").hasAttribute("hidden")',
+  // 5. 值班微信二维码:关门提示语里的「值班微信」可点,点了弹出二维码
+  console.log('\n[ui] 值班微信二维码');
+  sim.publish('doorwatch/it-office-door/state', 'CLOSED', { qos: 1, retain: true });
+  let closedShown = false;
+  for (let i = 0; i < 40; i++) {
+    const s = await cdp.eval(
+      'document.querySelector("article.door .state__title")?.textContent?.trim()',
+    );
+    if (s === '门关着') {
+      closedShown = true;
+      break;
+    }
+    await sleep(250);
+  }
+  check('先把门切成「门关着」', closedShown);
+
+  const qrLinkText = await cdp.eval(
+    'document.querySelector("article.door .qr-link")?.textContent?.trim()',
   );
-  check('点"管理"能拉起管理面板', sheetOpen === true);
-
-  const bodyLen = await cdp.eval('document.querySelector("#manage-body").innerText.length');
-  check('管理面板渲染出内容', bodyLen > 0, `长度 ${bodyLen}`);
-
-  // 5. 输入密钥解锁
-  await cdp.eval(`
-    (() => {
-      const input = document.querySelector('#key-input');
-      if (!input) return 'no-input';
-      input.value = ${JSON.stringify(ADMIN_KEY)};
-      document.querySelector('#key-verify').click();
-      return 'ok';
-    })()
-  `);
-  await sleep(1200);
-  const unlocked = await cdp.eval('!!document.querySelector(".door-admin")');
-  check('输入管理密钥后解锁成功', unlocked === true);
-
-  // 6. 置顶为关门
-  await cdp.eval(`
-    (() => {
-      const btn = document.querySelector('button[data-act="closed"]');
-      if (!btn) return 'no-btn';
-      btn.click();
-      return 'ok';
-    })()
-  `);
-  await sleep(1200);
-  const overridden = await cdp.eval(
-    'document.querySelector("article.door .badge--override")?.textContent?.trim()',
+  check(
+    '★ 关门提示语里「值班微信」是可点的',
+    qrLinkText === '值班微信',
+    `实际="${qrLinkText}"`,
   );
-  check('置顶后卡片出现"人工置顶"标记', overridden === '人工置顶', `实际="${overridden}"`);
-
-  const state2 = await cdp.eval(
-    'document.querySelector("article.door .state__title")?.textContent?.trim()',
+  const qrSrc = await cdp.eval(
+    'document.querySelector("article.door .qr-link")?.dataset?.qr ?? ""',
   );
-  check('置顶覆盖了传感器状态(开着→关着)', state2 === '门关着', `实际="${state2}"`);
+  check('★ 二维码路径由服务端下发', /wechat-qr\.jpg$/.test(qrSrc), `实际="${qrSrc}"`);
 
-  // 7. 截图
+  await cdp.eval('document.querySelector("article.door .qr-link").click()');
+  await sleep(600);
+  const modalOpen = await cdp.eval(
+    '!document.querySelector("#qr-modal").hasAttribute("hidden")',
+  );
+  check('★ 点一下弹出二维码', modalOpen === true);
+  const modalImg = await cdp.eval('document.querySelector("#qr-img")?.getAttribute("src") ?? ""');
+  check('★ 弹层里是那张二维码', /wechat-qr\.jpg$/.test(modalImg), `实际="${modalImg}"`);
+
+  // 等图片真的加载完再截图,不然拍到的是空白框
+  for (let i = 0; i < 40; i++) {
+    const done = await cdp.eval('document.querySelector("#qr-img")?.complete ?? false');
+    if (done) break;
+    await sleep(150);
+  }
+  const shotQr = await cdp.send('Page.captureScreenshot', { format: 'png' });
+  const shotQrPath = path.join(ARTIFACTS, 'wechat-qr-modal.png');
+  fs.writeFileSync(shotQrPath, Buffer.from(shotQr.data, 'base64'));
+  check('二维码弹层截图已生成', fs.existsSync(shotQrPath), shotQrPath);
+
+  await cdp.eval('document.querySelector("#qr-close").click()');
+  await sleep(300);
+  const modalClosed = await cdp.eval(
+    'document.querySelector("#qr-modal").hasAttribute("hidden")',
+  );
+  check('★ 关闭按钮能关掉弹层', modalClosed === true);
+
+  // 恢复开门状态,再截正常态的图
+  sim.publish('doorwatch/it-office-door/state', 'OPEN', { qos: 1, retain: true });
+  for (let i = 0; i < 40; i++) {
+    const s = await cdp.eval(
+      'document.querySelector("article.door .state__title")?.textContent?.trim()',
+    );
+    if (s === '门开着') break;
+    await sleep(250);
+  }
+
+  // 6. 截图
   const shot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
   const shotPath = path.join(ARTIFACTS, 'dashboard-mobile.png');
   fs.writeFileSync(shotPath, Buffer.from(shot.data, 'base64'));
   check('手机版效果图已生成', fs.existsSync(shotPath), shotPath);
-
-  // 关闭管理面板,再截一张正常态
-  await cdp.eval('document.querySelector("#manage-close").click()');
-  await sleep(400);
-  const shot2 = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
+  // README 首页引用的那张(以前是"关掉管理面板之后"的正常态,
+  // 现在没有面板了,两张就是同一张)
   const shot2Path = path.join(ARTIFACTS, 'dashboard-mobile-normal.png');
-  fs.writeFileSync(shot2Path, Buffer.from(shot2.data, 'base64'));
+  fs.writeFileSync(shot2Path, Buffer.from(shot.data, 'base64'));
+  check('README 用的手机版图已生成', fs.existsSync(shot2Path), shot2Path);
 
-  // 8. 桌面尺寸也看一眼
+  // 桌面尺寸也看一眼
   await cdp.send('Emulation.setDeviceMetricsOverride', {
     width: 1280,
     height: 800,
