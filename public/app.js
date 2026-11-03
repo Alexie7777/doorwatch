@@ -201,7 +201,7 @@ function render() {
     })
     .join('');
 
-  updateSubtitle();
+  updateTitle();
 }
 
 /**
@@ -218,31 +218,25 @@ function tick() {
   }
 }
 
-function updateSubtitle() {
-  const sub = $('#subtitle');
+/**
+ * 更新页头标题。
+ *
+ * 只有一扇门时直接用它的名字;多扇门就用统称,别让标题撒谎。
+ * (以前标题下面还有一行副标题,写「有人值班,可以直接过去」——
+ *  那行已经删了:门卡片里本来就有这句,页头再说一遍是重复。)
+ */
+function updateTitle() {
   const title = document.querySelector('.topbar h1');
+  if (!title) return;
 
-  // 只有一扇门时直接用它的名字;多扇门就用统称,别让标题撒谎
-  if (title) {
-    if (state.doors.length === 1) {
-      const loc = doorLocale(state.doors[0]);
-      title.textContent = loc.name ?? state.doors[0].name;
-    } else if (state.doors.length > 1) {
-      title.textContent = t('statusTitle');
-    } else {
-      title.textContent = t('appTitle');
-    }
+  if (state.doors.length === 1) {
+    const loc = doorLocale(state.doors[0]);
+    title.textContent = loc.name ?? state.doors[0].name;
+  } else if (state.doors.length > 1) {
+    title.textContent = t('statusTitle');
+  } else {
+    title.textContent = t('appTitle');
   }
-
-  if (!state.connected) {
-    sub.textContent = t('disconnected');
-    return;
-  }
-  const open = state.doors.filter((d) => d.state === 'open').length;
-  const unknown = state.doors.filter((d) => d.state === 'unknown').length;
-  if (unknown > 0) sub.textContent = t('subUnknown', { n: unknown });
-  else if (open > 0) sub.textContent = t('subOpen');
-  else sub.textContent = t('subNone');
 }
 
 /* ------------------------------------------------------------------ *
@@ -301,7 +295,7 @@ async function loadDoors() {
     render();
   } catch (err) {
     state.connected = false;
-    updateSubtitle();
+    updateTitle();
     $('#conn-dot')?.classList.add('dot--bad');
   }
 }
@@ -313,7 +307,8 @@ async function loadDoors() {
  *   规范里 EventSource 只在「连接被中断」时自动重连;
  *   如果重连时服务器返回了非 200 或者 Content-Type 不对,
  *   浏览器会**彻底放弃**(readyState = CLOSED),再也不重试了。
- *   于是页面就一直挂在「连接断开,正在重试…」,其实早就没人再试了。
+ *   于是页面就再也收不到推送了(右上角的点一直是琥珀色),
+ *   其实早就没人再试了。
  *   —— 这是真踩过的坑:手机锁屏再解锁、网络抖动一下,看板就再也不更新了。
  *
  *   所以这里加了两道保险:
@@ -344,7 +339,7 @@ function connectSSE() {
   es.onerror = () => {
     state.connected = false;
     $('#conn-dot')?.classList.remove('dot--on');
-    updateSubtitle();
+    updateTitle();
     // EventSource 自带重连,这里只更新 UI。
     // 万一它不重试(见上面的说明),看门狗会兜底。
     startFallbackPoll();

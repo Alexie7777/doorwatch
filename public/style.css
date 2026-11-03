@@ -80,12 +80,6 @@ body {
   letter-spacing: 0.2px;
 }
 
-.topbar__sub {
-  margin: 2px 0 0;
-  font-size: 12px;
-  color: var(--text-dim);
-}
-
 /* 页头右侧的一排按钮:管理 / 语言 / 连接状态 */
 .topbar__actions {
   flex: none;

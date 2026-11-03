@@ -375,6 +375,16 @@ try {
   const headerManage = await cdp.eval('!!document.querySelector(".topbar #manage-btn")');
   check('★「管理」按钮挪到了页头', headerManage === true);
 
+  // 页头副标题(「有人值班,可以直接过去」)已经删掉了 —— 门卡片里本来就有这句,
+  // 页头再说一遍是重复。钉住它别被加回来。
+  const topbarText = await cdp.eval('document.querySelector(".topbar")?.innerText ?? ""');
+  const hasSubEl = await cdp.eval('!!document.querySelector("#subtitle")');
+  check(
+    '★ 页头不再有副标题',
+    !hasSubEl && !topbarText.includes('有人值班') && !topbarText.includes('值班,可以直接过去'),
+    `实际="${topbarText.replace(/\s+/g, ' ').trim()}"`,
+  );
+
   // 切到英文
   await cdp.eval('document.querySelector("#lang-toggle").click()');
   await sleep(500);
