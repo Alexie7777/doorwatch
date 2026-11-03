@@ -19,7 +19,7 @@ const STORAGE_KEY = 'dw_lang';
 const DICT = {
   zh: {
     /* ---- 页面主体 ---- */
-    pageTitle: 'IT 办公室状态',
+    pageTitle: '不徒步 · nohike — IT 办公室状态',
     appTitle: 'IT 办公室',
     statusTitle: 'IT 在岗状态',
     stateOpen: '门开着',
@@ -34,7 +34,7 @@ const DICT = {
     today: '今天:开 {open} 次 / 关 {close} 次',
     now: '现在',
     footerHint: '一眼知门况，免跑空一趟。',
-    poweredBy: 'Powered By IT Dept',
+    poweredBy: 'Powered By 不徒步 · nohike',
 
     /* ---- 相对时间 ---- */
     relJustNow: '刚刚',
@@ -78,7 +78,7 @@ const DICT = {
 
   en: {
     /* ---- 页面主体 ---- */
-    pageTitle: 'IT Office Status',
+    pageTitle: '不徒步 · nohike — IT Office Status',
     appTitle: 'IT Office',
     statusTitle: 'IT Office Status',
     stateOpen: 'Door Open',
@@ -93,7 +93,7 @@ const DICT = {
     today: 'Today: {open} open / {close} closed',
     now: 'Now',
     footerHint: 'Glance before you leave, no need to grieve.',
-    poweredBy: 'Powered By IT Dept',
+    poweredBy: 'Powered By 不徒步 · nohike',
 
     /* ---- 相对时间 ---- */
     relJustNow: 'just now',

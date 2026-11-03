@@ -357,9 +357,15 @@ try {
     })()
   `);
   check(
-    '页脚显示 Powered By IT Dept',
-    footerInfo.text.includes('Powered By IT Dept'),
+    '页脚显示 Powered By 不徒步 · nohike',
+    footerInfo.text.includes('Powered By 不徒步 · nohike'),
     footerInfo.text.replace(/\s+/g, ' ').trim(),
+  );
+  const pageTitle = await cdp.eval('document.title');
+  check(
+    '★ 标签标题带品牌名',
+    pageTitle === '不徒步 · nohike — IT 办公室状态',
+    `实际="${pageTitle}"`,
   );
   const zhFooterHint = await cdp.eval(
     'document.querySelector("#footer-hint")?.textContent?.trim()',
@@ -410,6 +416,12 @@ try {
   );
   const htmlLang = await cdp.eval('document.documentElement.lang');
   check('★ documentElement.lang 变成 en', htmlLang === 'en', `实际="${htmlLang}"`);
+  const enPageTitle = await cdp.eval('document.title');
+  check(
+    '★ 英文界面的标签标题也带品牌名',
+    enPageTitle === '不徒步 · nohike — IT Office Status',
+    `实际="${enPageTitle}"`,
+  );
   const enName = await cdp.eval(
     'document.querySelector("article.door .door__name")?.textContent?.trim()',
   );

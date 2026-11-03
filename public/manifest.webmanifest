@@ -1,7 +1,7 @@
 {
-  "name": "IT 办公室状态",
-  "short_name": "IT 状态",
-  "description": "查看 IT 办公室是否关门,不用白跑一趟",
+  "name": "不徒步 · nohike",
+  "short_name": "不徒步",
+  "description": "不徒步 · nohike —— 查看 IT 办公室是否关门,不用白跑一趟",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

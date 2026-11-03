@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "IT 办公室门磁状态看板 —— 门关没关门,手机上看一眼,不用白跑一趟",
+  "description": "不徒步 · nohike —— IT 办公室门磁状态看板,门关没关门,手机上看一眼,不用白跑一趟",
   "main": "server/src/index.js",
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server/src/index.js",
