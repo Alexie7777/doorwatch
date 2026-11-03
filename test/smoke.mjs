@@ -19,8 +19,11 @@ import mqtt from 'mqtt';
 const ROOT = path.resolve(import.meta.dirname, '..');
 const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'doorwatch-test-'));
 const HTTP_PORT = 18099;
+/** 额外的纯 HTTP 端口 —— 微信等内置浏览器走这条 */
+const PLAIN_PORT = 18097;
 const MQTT_PORT = 18899;
 const BASE = `http://127.0.0.1:${HTTP_PORT}`;
+const PLAIN_BASE = `http://127.0.0.1:${PLAIN_PORT}`;
 
 let failures = 0;
 function check(name, cond, extra = '') {
@@ -61,6 +64,8 @@ const server = spawn(
       DATA_DIR,
       HTTPS: 'false',
       PORT: String(HTTP_PORT),
+      // 额外开一个纯 HTTP 端口 —— 微信等内置浏览器走这条(见 server/src/index.js)
+      HTTP_PORT: String(PLAIN_PORT),
       MQTT_PORT: String(MQTT_PORT),
       ONLINE_TIMEOUT_MS: '2000', // 心跳超时缩到 2 秒,方便测
       DOORS_JSON: JSON.stringify({
@@ -185,6 +190,34 @@ try {
 
   const asset = await fetch(`${BASE}/app.js`);
   check('前端资源可访问', asset.ok, `HTTP ${asset.status}`);
+
+  // --- 7. 额外的纯 HTTP 端口 ---
+  // ★ 这个端口**直接提供看板**,不是跳转到 HTTPS。
+  //   微信内置浏览器打不开自签证书的 HTTPS(连"高级 → 继续"都不给),
+  //   所以要让人能在微信里点开链接,必须有一条真正的 HTTP 通路。
+  const plainPage = await fetch(`${PLAIN_BASE}/`, { redirect: 'manual' });
+  const plainHtml = await plainPage.text();
+  check(
+    '★ 纯 HTTP 端口直接提供看板(不是 302 跳转)',
+    plainPage.status === 200 && plainHtml.includes('IT 办公室'),
+    `HTTP ${plainPage.status}`,
+  );
+
+  const plainHealth = await fetch(`${PLAIN_BASE}/api/health`);
+  const plainHealthJson = plainHealth.ok ? await plainHealth.json() : null;
+  check(
+    '纯 HTTP 端口的 /api/health 可用',
+    plainHealth.status === 200 && plainHealthJson?.ok === true,
+    `HTTP ${plainHealth.status}`,
+  );
+
+  const plainDoors = await fetch(`${PLAIN_BASE}/api/doors`);
+  const plainDoorsJson = plainDoors.ok ? await plainDoors.json() : null;
+  check(
+    '纯 HTTP 端口的 /api/doors 能拿到门的状态',
+    plainDoors.status === 200 && Array.isArray(plainDoorsJson?.doors),
+    `HTTP ${plainDoors.status}`,
+  );
 
   client.end(true);
 } catch (err) {

@@ -39,7 +39,7 @@
 
 ```bash
 cd /srv/doorwatch
-node tools/doctor.mjs --doorwatch https://<你的服务器>:8443 --insecure
+node tools/doctor.mjs --doorwatch http://<你的服务器>:8443
 ```
 
 它会查 5 环(服务端 → MQTT → 看板 → HA 模板 → deviceId 对齐),
@@ -51,7 +51,7 @@ node tools/doctor.mjs --doorwatch https://<你的服务器>:8443 --insecure
 
 ```bash
 node tools/doctor.mjs \
-  --doorwatch https://<你的服务器>:8443 --insecure \
+  --doorwatch http://<你的服务器>:8443 \
   --ha http://<你的HA>:8123 --token <TOKEN>
 ```
 
@@ -265,7 +265,7 @@ template:
 HA 报错原文直接打出来:
 
 ```bash
-node tools/doctor.mjs --doorwatch https://<你的服务器>:8443 --insecure \
+node tools/doctor.mjs --doorwatch http://<你的服务器>:8443 \
   --ha http://<你的HA>:8123 --token <TOKEN>
 ```
 
@@ -335,12 +335,18 @@ docker compose logs -f doorwatch
 日志里应该看到:
 
 ```
-[http] 看板已启动: https://192.168.1.50:8443
+[doorwatch] 访问地址: http://192.168.1.50:8443
+[doorwatch] 看板已启动,端口 8443
 [mqtt] 内置 broker 已启动: 0.0.0.0:1883
 ```
 
-手机浏览器打开 `https://<服务器IP>:8443`,自签证书会提示不安全,
-点「高级 → 继续前往」。iOS Safari「分享 → 添加到主屏幕」就变成 App 图标了。
+手机浏览器打开 `http://<服务器IP>:8443` —— **纯 HTTP,直接进,没有证书警告**。
+微信里点链接也能直接打开,这是这么配的原因。
+
+> ⚠️ 纯 HTTP 下浏览器不允许把看板「安装」成 PWA(桌面图标 + 离线缓存)。
+> 想要那个效果,得把 `deploy/docker-compose.yml` 里的 `HTTPS` 改回 `"true"`;
+> 但那样微信里就又打不开了。二选一,详见 README 的
+> [HTTP 还是 HTTPS](../README.md#http-还是-https) 一节。
 
 ---
 
@@ -361,7 +367,7 @@ docker compose logs -f doorwatch
 >
 > ① **服务端是新版吗**(旧服务端不订阅 `battery` 主题,收到就丢):
 > ```bash
-> node tools/doctor.mjs --doorwatch https://<你的服务器>:8443 --insecure
+> node tools/doctor.mjs --doorwatch http://<你的服务器>:8443
 > ```
 > 看「服务端」那一环有没有 `已订阅 doorwatch/+/{state,status,heartbeat,battery}`。
 >

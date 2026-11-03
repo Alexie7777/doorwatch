@@ -376,7 +376,14 @@ try {
   const enMeta = await cdp.eval(
     'document.querySelector("article.door .door__meta")?.innerText?.replace(/\\s+/g, " ")?.trim()',
   );
-  check('英文标签和值之间留了空格', enMeta?.includes('Last change: just now'), `实际="${enMeta}"`);
+  // 断言的是「标签和值之间留了空格」(英文的 colon 是 ': '),
+  // 所以只看「标签 + 冒号 + 空格 + 值」这个形状 —— 不要写死 'just now',
+  // 那取决于门最后一次变化是几秒前,跑得慢一点就变 '10s ago',纯属自找的随机失败。
+  check(
+    '英文标签和值之间留了空格',
+    /Last change: \S/.test(enMeta ?? ''),
+    `实际="${enMeta}"`,
+  );
   const enUnknown = await cdp.eval(
     'document.querySelectorAll("article.door .state__hint")[1]?.textContent?.trim()',
   );

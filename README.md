@@ -42,9 +42,11 @@
 
 ### 1. 打开看板
 
-浏览器打开 `https://<服务器IP>:8443`
+浏览器打开 `http://<服务器IP>:8443`
 
-自签证书会先弹「不安全」→ 点「高级 → 继续前往」→ 之后浏览器记住了,以后不再弹。
+**纯 HTTP,直接打开就能用**,没有证书警告、没有「高级 → 继续前往」。
+微信里点链接也能直接进 —— 这正是部署成 HTTP 的原因,见
+[HTTP 还是 HTTPS](#http-还是-https)。
 
 手机上打不开 → 多半是校园网开了 **AP 隔离**(见[常见问题](#常见问题))。
 
@@ -56,7 +58,16 @@
 | Android Chrome | 右上角「⋮」→「添加到主屏幕」 |
 
 之后桌面上就是个独立图标,点开全屏无地址栏,跟原生 App 没区别。
-**只有 HTTPS(或 localhost)才能这样装**,所以服务器上必须开 HTTPS —— 默认就是开的。
+
+> ⚠️ **纯 HTTP 下装不了真正的 PWA。**
+> 浏览器只在 **HTTPS(或 localhost)** 下才允许「安装」到主屏幕 —— 这是浏览器的
+> 硬性规定,不是本项目的限制。现在的部署是 HTTP,所以手机上只能用浏览器打开。
+>
+> 想要桌面图标 + 离线缓存?把 `HTTPS` 改回 `"true"` 重启就行,
+> 见[HTTP 还是 HTTPS](#http-还是-https)。代价是微信里又打不开了。
+>
+> iOS Safari 的「添加到主屏幕」在 HTTP 下**照样能加**,只是当成普通书签,
+> 打开时不带地址栏、但没有 Service Worker 离线能力。
 
 ### 3. 现在看板显示「状态未知」—— 这是对的,不是坏了
 
@@ -157,10 +168,11 @@ docker compose exec doorwatch cat /data/ADMIN_KEY.txt
 
 ### 6. 发给同事
 
-把 `https://<服务器IP>:8443` 发到群里就行 —— **读接口免登录**,谁都能看。
+把 `http://<服务器IP>:8443` 发到群里就行 —— **读接口免登录**,谁都能看。
 
-想让别人手机上不弹「不安全」,就用学校内网 CA 签发的证书
-(`CERT_FILE` / `KEY_FILE`,见[证书](#证书))。这是唯一需要额外一步的地方。
+**微信里能直接点开**,因为走的是纯 HTTP,没有自签证书那套「不安全」拦截。
+这是特意这么配的:微信内置浏览器遇到自签证书会直接甩一句「无法访问此网站」,
+连「高级 → 继续前往」那个按钮都不给,链接就废了 —— 每年都有人为这个折腾一下午。
 
 ### 7. 确认一切正常 —— 一条命令体检整条链路
 
@@ -168,21 +180,24 @@ docker compose exec doorwatch cat /data/ADMIN_KEY.txt
 断在哪一环现象都是「看板一直显示未知」。用这个工具一次查完,直接告诉你断在哪:
 
 ```bash
-node tools/doctor.mjs --doorwatch https://<你的服务器>:8443 --insecure
+node tools/doctor.mjs --doorwatch http://<你的服务器>:8443
 ```
 
 把 HA 也拉进来一起查(可选,需要 HA 长期访问令牌):
 
 ```bash
-node tools/doctor.mjs --doorwatch https://<你的服务器>:8443 --insecure \
+node tools/doctor.mjs --doorwatch http://<你的服务器>:8443 \
   --ha http://10.37.2.208:8123 --token <TOKEN>
 ```
+
+> 服务端改回 HTTPS 了?加 `--insecure` 跳过证书校验就行。
+> 不加也行 —— 体检工具会自己发现证书是自签的,自动降级重试一次。
 
 输出长这样:
 
 ```
 [1/5] doorwatch 服务端
-  ✅ 服务可达  https://it-server-bak:8443
+  ✅ 服务可达  http://it-server-bak:8443
   ✅ 版本 1.0.0,已运行 42 分钟
   ✅ MQTT broker:内置,端口 1883  当前 2 个客户端连着
 
@@ -222,7 +237,7 @@ node tools/doctor.mjs --doorwatch https://<你的服务器>:8443 --insecure \
 不想用工具的话,手动确认也行:
 
 ```bash
-curl -k https://127.0.0.1:8443/api/health
+curl http://127.0.0.1:8443/api/health
 # {"ok":true,"version":"1.0.0","doors":3,...}
 ```
 
@@ -236,7 +251,7 @@ curl -k https://127.0.0.1:8443/api/health
 | 更新代码 | `cd .. && git pull && cd deploy && docker compose up -d --build` |
 | 备份数据(SQLite + 证书) | `docker run --rm -v doorwatch_deploy_doorwatch-data:/data -v $(pwd):/out alpine tar czf /out/doorwatch-backup.tgz -C /data .` |
 | 端口被占 | `node tools/check-ports.mjs` |
-| 体检整条链路(看板不更新时先跑这个) | `node tools/doctor.mjs --doorwatch https://<服务器>:8443 --insecure` |
+| 体检整条链路(看板不更新时先跑这个) | `node tools/doctor.mjs --doorwatch http://<服务器>:8443` |
 | 查 HA 门磁实体与时间戳 | `node tools/ha-probe.mjs --host http://<HA>:8123 --token <TOKEN>` |
 
 ---
@@ -628,7 +643,7 @@ docker compose logs -f doorwatch
 验证:
 
 ```bash
-curl -k https://127.0.0.1:8443/api/health
+curl http://127.0.0.1:8443/api/health
 # {"ok":true,"version":"1.0.0","doors":1,...}
 ```
 
@@ -650,7 +665,7 @@ cd doorwatch/deploy
 docker compose up -d
 ```
 
-- 看板:`https://<服务器IP>:8443/`
+- 看板:`http://<服务器IP>:8443/`
 - MQTT:`<服务器IP>:1883`
 
 数据(SQLite / 证书 / 管理密钥)都在 `doorwatch-data` 卷里,容器重建不丢。
@@ -660,7 +675,7 @@ docker compose up -d
 ```bash
 cd doorwatch
 npm ci                                  # 按 package-lock.json 装,别用 npm install
-DATA_DIR=/var/lib/doorwatch HTTPS=true node --disable-warning=ExperimentalWarning server/src/index.js
+DATA_DIR=/var/lib/doorwatch HTTPS=false node --disable-warning=ExperimentalWarning server/src/index.js
 ```
 
 需要 Node.js ≥ 22.5(用到内置的 `node:sqlite`,免原生编译)。
@@ -673,10 +688,45 @@ MQTT_USERNAME=esp MQTT_PASSWORD=xxx \
 node server/src/index.js
 ```
 
+### HTTP 还是 HTTPS
+
+**当前部署是纯 HTTP**(`HTTPS=false`),端口还是 8443,地址是 `http://<服务器IP>:8443`。
+
+| | 纯 HTTP(当前) | HTTPS |
+|---|---|---|
+| 浏览器打开 | 直接开,无任何提示 | 自签证书会弹「不安全」,要手动点「高级 → 继续前往」 |
+| **微信里点链接** | ✅ 直接进 | ❌ 「无法访问此网站」,连「继续前往」都不给 |
+| PWA 安装到主屏幕 | ❌ 浏览器不允许 | ✅ 可以 |
+| 传输是否加密 | ❌ 明文 | ✅ |
+| iOS「添加到主屏幕」 | ✅ 能加,但退化成普通书签 | ✅ 真 PWA |
+
+**为什么选 HTTP**:这个看板的唯一用途是「在手机上瞄一眼门开没开」,
+主力场景就是微信里点开一条链接。自签证书的 HTTPS 在微信内置浏览器里是**死路**,
+而证书可信的 HTTPS 需要走学校内网 CA,不是随手能拿到的东西。
+内网小工具、明文 HTTP 的风险(同网段可嗅探)在这里是可接受的取舍。
+
+**想切回 HTTPS**:改一个环境变量就行,端口、数据、看板内容全不变。
+
+```yaml
+# deploy/docker-compose.yml
+environment:
+  HTTPS: "true"        # ← 改这个
+```
+
+```bash
+cd deploy && docker compose up -d
+```
+
+切回去之后:
+
+- 微信里就又打不开了 —— 这是必然的,两者不可兼得
+- PWA 可以安装了(桌面图标 + Service Worker 离线缓存)
+- 想让手机不弹证书警告,得用学校内网 CA 签发的证书(见下)
+
 ### 证书
 
-首次启动会自动用 `openssl` 生成自签证书(同时把本机所有内网 IP 写进 SAN)。
-三个方式可以覆盖:
+只在 `HTTPS=true` 时用得上。首次启动会自动用 `openssl` 生成自签证书
+(同时把本机所有内网 IP 写进 SAN)。三个方式可以覆盖:
 
 1. `CERT_FILE` / `KEY_FILE` 指向学校内网 CA 签发的证书(**推荐**,手机不会报证书警告)
 2. 手动生成后放进 `$DATA_DIR/cert/{server.crt,server.key}`
@@ -688,8 +738,8 @@ node server/src/index.js
 ### 让全校都能看到
 
 1. 找 IT 拿一个内网域名(比如 `doorwatch.school.edu`),解析到服务器 IP
-2. `CERT_NAMES=doorwatch.school.edu` 启动,证书就带上这个域名
-3. 写个公告,附上链接;iOS Safari「分享 → 添加到主屏幕」就能变成一个 App 图标
+2. 纯 HTTP 直接用这个域名就行;`HTTPS=true` 时加 `CERT_NAMES=doorwatch.school.edu`,证书就带上这个域名
+3. 写个公告,附上链接;iOS Safari「分享 → 添加到主屏幕」就能变成一个桌面图标
 
 **读接口是免登录的**(内网即可访问),这样才有人愿意用。
 写操作(人工置顶、webhook)需要管理密钥。
@@ -702,10 +752,10 @@ node server/src/index.js
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `PORT` | `8443` | HTTPS 端口 |
-| `HTTP_PORT` | `0` | 额外开一个纯 HTTP 端口(可选) |
+| `PORT` | `8443` | 主端口。`HTTPS=true` 时走 HTTPS,`HTTPS=false` 时走纯 HTTP |
+| `HTTP_PORT` | `0` | 额外再开一个纯 HTTP 端口(可选)。**不是跳转**,它直接提供同一套看板 |
 | `DATA_DIR` | `./data` | 数据库 / 证书 / 密钥存放目录 |
-| `HTTPS` | `true` | 关掉就用纯 HTTP |
+| `HTTPS` | `true` | 关掉就用纯 HTTP。当前部署是 `false`(为了微信能直接打开) |
 | `CERT_NAMES` | 空 | 证书里额外写进去的域名/IP,逗号分隔 |
 | `CERT_FILE` / `KEY_FILE` | 空 | 用自己的证书 |
 | `MQTT_PORT` | `1883` | 内置 broker 端口 |
@@ -784,6 +834,12 @@ node server/src/index.js
 
 **6. 不引 node-forge。**
 自签证书用系统的 `openssl` 生成,避开一个未修复的高危安全公告,少一个依赖。
+(纯 HTTP 部署下根本不生成证书,这条只对 `HTTPS=true` 生效。)
+
+**7. 端口 8443 不因为改协议就变。**
+`HTTPS=false` 时 8443 监听的是普通 HTTP,地址只是从 `https://` 变成 `http://`,
+端口号、Docker 端口映射、MQTT 配置全都不用动,防火墙也不用改。
+一个环境变量就能来回切。
 
 ---
 
@@ -825,7 +881,7 @@ docker logs -f doorwatch
 docker logs doorwatch | grep 传感器
 
 # 健康检查
-curl -k https://服务器:8443/api/health
+curl http://服务器:8443/api/health
 
 # 手动把某扇门置顶成"关门"(比如全员出差两天)
 curl -X POST http://服务器:8443/api/doors/it-office/override \
@@ -845,6 +901,20 @@ sqlite3 /var/lib/doorwatch/doorwatch.db \
 ---
 
 ## 常见问题
+
+**Q:微信里点链接,打不开 / 显示「无法访问此网站」?**
+这个部署是**纯 HTTP**,正常情况下微信里应该能直接打开。
+如果还是不行,按这个顺序查:
+
+1. 地址对不对 —— 必须以 `http://` 开头,不是 `https://`(微信内置浏览器遇到
+   自签证书的 HTTPS 是直接拒绝,不给「继续前往」)
+2. 手机和服务器在同一个网段吗 —— 校园网 **AP 隔离** 会挡住互访
+3. 微信右上角「⋯」→「在浏览器打开」,排除微信自身的网络策略问题
+
+**Q:想把看板装成 App(桌面图标 + 离线可用),但现在是 HTTP 装不了?**
+浏览器只在 HTTPS(或 localhost)下才允许「安装」PWA,这是硬性规定。
+把 `deploy/docker-compose.yml` 里的 `HTTPS` 改成 `"true"` 重启即可 ——
+但那样微信里就又打不开了。二选一,取舍见[HTTP 还是 HTTPS](#http-还是-https)。
 
 **Q:手机上打不开看板,提示连接不上?**
 多半是校园网开了 **AP 隔离**。同一个 WiFi 下的设备之间不能互访。
@@ -880,7 +950,7 @@ Service Worker 曾经拦截过 `/api/stream` —— SW 是个中间人,浏览器
 **Q:看板一直显示"状态未知"?**
 先跑体检,别瞎猜:
 ```bash
-node tools/doctor.mjs --doorwatch https://<服务器>:8443 --insecure \
+node tools/doctor.mjs --doorwatch http://<服务器>:8443 \
   --ha http://<HA>:8123 --token <TOKEN>
 ```
 它会告诉你断在哪一环。再按下面分情况:

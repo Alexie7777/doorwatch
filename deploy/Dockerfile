@@ -27,8 +27,12 @@ ENV NODE_ENV=production \
 VOLUME ["/data"]
 EXPOSE 8443 1883
 
+# 健康检查要同时认 HTTPS 和纯 HTTP:
+#   - 部署成纯 HTTP(HTTPS=false)时,写死 https:// 会让容器一直被判成 unhealthy
+#   - 部署成 HTTPS 时,自签证书会被 fetch 拒掉,同样 unhealthy
+# 所以两种协议都试,HTTPS 那一路显式放行自签证书(rejectUnauthorized:false)。
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD node -e "fetch('https://127.0.0.1:8443/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "const h=require('http'),s=require('https');const g=(u,o)=>new Promise(r=>{const c=(u.startsWith('https')?s:h).get(u,o,x=>{x.resume();r(x.statusCode===200)});c.on('error',()=>r(false));c.setTimeout(4000,()=>{c.destroy();r(false)})});(async()=>{for(const p of [['https://127.0.0.1:8443/api/health',{rejectUnauthorized:false}],['http://127.0.0.1:8443/api/health',{}]]){if(await g(p[0],p[1])){process.exit(0)}}process.exit(1)})()"
 
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["node", "--disable-warning=ExperimentalWarning", "server/src/index.js"]

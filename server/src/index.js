@@ -375,13 +375,20 @@ async function main() {
   console.log(`[doorwatch] 看板已启动,端口 ${config.port}`);
 
   if (config.httpPort > 0) {
-    const plain = http.createServer((req, res) => {
-      if (req.url === '/api/health') return handleApi(req, res, new URL(req.url, 'http://x'));
-      res.writeHead(302, { Location: `https://${req.headers.host?.split(':')[0]}:${config.port}/` });
-      res.end();
-    });
+    // ★ 纯 HTTP 端口**直接提供看板**,不是跳转到 HTTPS。
+    //   为什么改:微信内置浏览器打不开自签证书的 HTTPS ——
+    //   它直接显示「无法访问此网站」,连「高级 → 继续前往」那个按钮都不给。
+    //   跳转过去还是同一个证书错误,毫无意义。
+    //   要让人能在微信里点开链接,就得有一条真正的 HTTP 通路。
+    //
+    //   两种常见摆法:
+    //     HTTPS=true  + HTTP_PORT=8080 → 8443 走 HTTPS(给 PWA),8080 走 HTTP(给微信)
+    //     HTTPS=false + HTTP_PORT=0    → 8443 直接走 HTTP(最简单,当前部署就是这样)
+    const plain = http.createServer(handler);
     await new Promise((resolve) => plain.listen(config.httpPort, config.host, resolve));
-    console.log(`[doorwatch] HTTP 跳转端口: ${config.httpPort}`);
+    console.log(
+      `[doorwatch] 纯 HTTP 端口(微信等内置浏览器走这个): ${config.httpPort}`,
+    );
   }
 
   const shutdown = async (sig) => {

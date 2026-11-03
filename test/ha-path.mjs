@@ -26,9 +26,17 @@ const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'doorwatch-ha-'));
 const HTTP_PORT = 18098;
 const MQTT_PORT = 18898;
 
-/** 心跳间隔 2 秒,超时 6 秒(3 倍冗余,和生产的 60s/180s 同比例) */
+/**
+ * 心跳间隔 2 秒,超时 15 秒。
+ *
+ * 超时为什么给到 15 秒(而不是 6 秒):
+ *   这条测试要区分两件事 —— 「offline 消息让看板**立刻**降级」和
+ *   「等心跳超时才降级」。要证明前者,就必须让后者的阈值远大于前者,
+ *   否则机器一忙,两条路径挤在一起,测出来的是运气不是逻辑。
+ *   15 秒超时 + 10 秒观察窗口,既能证明「远早于超时」,又给慢机器留了余量。
+ */
 const HB = 2;
-const TIMEOUT_MS = 6000;
+const TIMEOUT_MS = 15000;
 
 let failures = 0;
 function check(name, cond, extra = '') {
@@ -141,8 +149,13 @@ try {
 
   // --- 3. HA 读不到传感器 → 不发心跳 → 降级为未知 ---
   console.log('\n[test] 等待 HA 侧传感器变为不可读,心跳中断…');
-  await sleep(10_000);
-  door = await getDoor('it-office');
+  // 不要写死 sleep(10_000) —— 模拟器第 5 秒就不可读了,睡固定时长再去查,
+  // 差一秒和差十秒是两种完全不同的结果,机器一忙就随机翻车。
+  // 直接轮询"状态变成未知",等它真发生。
+  door = await waitFor(async () => {
+    const d = await getDoor('it-office');
+    return d && d.state === 'unknown' ? d : null;
+  }, 25_000, 200);
   check('HA 读不到传感器后看板降级为"未知"', door?.state === 'unknown', `state=${door?.state}`);
   check('降级后传感器标记为离线', door?.online === false);
   check(
@@ -208,12 +221,12 @@ try {
   const degraded = await waitFor(async () => {
     const d = await getDoor('it-office');
     return d && d.state === 'unknown' ? d : null;
-  }, 5000, 50);
+  }, 10_000, 50);
   const elapsed = Date.now() - sentAt;
   check(
     '收到 offline 后立即降级为"未知"',
     Boolean(degraded),
-    degraded ? `耗时 ${elapsed}ms` : '5 秒内未降级',
+    degraded ? `耗时 ${elapsed}ms` : '10 秒内未降级',
   );
   check(
     '降级耗时远小于心跳超时',
@@ -239,12 +252,12 @@ try {
   const afterUnknown = await waitFor(async () => {
     const d = await getDoor('it-office');
     return d && d.state === 'unknown' ? d : null;
-  }, 5000, 50);
+  }, 10_000, 50);
   const unknownElapsed = Date.now() - unknownAt;
   check(
     '收到 state=UNKNOWN 后立即降级为"未知"',
     Boolean(afterUnknown),
-    afterUnknown ? `耗时 ${unknownElapsed}ms` : '5 秒内未降级',
+    afterUnknown ? `耗时 ${unknownElapsed}ms` : '10 秒内未降级',
   );
   check(
     'UNKNOWN 降级耗时远小于心跳超时',

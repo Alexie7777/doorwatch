@@ -11,10 +11,13 @@
  * 只读,不写任何东西。
  *
  * 用法:
- *   node tools/doctor.mjs --doorwatch https://it-server-bak:8443
- *   node tools/doctor.mjs --doorwatch https://it-server-bak:8443 --insecure
- *   node tools/doctor.mjs --doorwatch https://it-server-bak:8443 \
+ *   node tools/doctor.mjs --doorwatch http://it-server-bak:8443
+ *   node tools/doctor.mjs --doorwatch http://it-server-bak:8443 \
  *        --ha http://10.37.2.208:8123 --token <TOKEN>
+ *
+ * 服务端改回 HTTPS 了?加 --insecure 跳过证书校验。
+ * 不加也行 —— 下面的 httpRequest 会自己发现"地址写成了 https 但服务端是纯 HTTP"
+ * 或者"证书是自签的",各自动降级重试一次。
  *
  * 环境变量也可以:DOORWATCH_URL / HA_URL / HA_TOKEN
  */
@@ -59,7 +62,7 @@ if (args.help) {
   --doorwatch <url>   doorwatch 地址(默认 http://127.0.0.1:8443,可用 DOORWATCH_URL)
   --ha <url>          Home Assistant 地址(可选,可用 HA_URL)
   --token <tok>       HA 长期访问令牌(可选,可用 HA_TOKEN)
-  --insecure          跳过 TLS 证书校验(自签证书用)
+  --insecure          跳过 TLS 证书校验(只有服务端是 HTTPS 时才需要)
 `);
   process.exit(0);
 }

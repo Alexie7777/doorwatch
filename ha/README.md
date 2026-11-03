@@ -549,7 +549,7 @@ def __eq__(self, other: object) -> bool:
 当场看会渲染成什么,渲染失败还会把 HA 的报错原文带回来:
 
 ```bash
-node tools/doctor.mjs --doorwatch https://<服务器>:8443 --insecure \
+node tools/doctor.mjs --doorwatch http://<服务器>:8443 \
   --ha http://<HA>:8123 --token <TOKEN>
 ```
 
