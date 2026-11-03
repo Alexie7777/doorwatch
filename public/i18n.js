@@ -38,7 +38,7 @@ const DICT = {
     heartbeat: '心跳',
     today: '今天:开 {open} 次 / 关 {close} 次',
     now: '现在',
-    footerHint: '出门前扫一眼,省下一趟白跑。',
+    footerHint: '一眼知门况，免跑空一趟。',
     poweredBy: 'Powered By IT Dept',
 
     /* ---- 相对时间 ---- */
@@ -112,7 +112,7 @@ const DICT = {
     heartbeat: 'Heartbeat',
     today: 'Today: {open} open / {close} closed',
     now: 'Now',
-    footerHint: 'Take a look before you head over — save yourself a wasted trip.',
+    footerHint: 'Glance before you leave, no need to grieve.',
     poweredBy: 'Powered By IT Dept',
 
     /* ---- 相对时间 ---- */

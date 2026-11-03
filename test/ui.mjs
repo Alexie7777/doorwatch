@@ -13,6 +13,7 @@
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import mqtt from 'mqtt';
@@ -22,9 +23,26 @@ const ARTIFACTS = path.join(ROOT, 'test', 'artifacts');
 const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'doorwatch-ui-'));
 const HTTP_PORT = 18098;
 const MQTT_PORT = 18898;
-const DEBUG_PORT = 19333;
+/**
+ * Chrome 调试端口**每次现挑一个空闲端口**。
+ * 写死端口的话,上一轮跑剩下的 Chrome 还占着它,这一轮的 Chrome 就绑不上 ——
+ * 表现是「连不上 Chrome 调试端口」,而实际上 Chrome 好好地开着,只是端口被占。
+ */
+const DEBUG_PORT = await freePort();
 const BASE = `http://127.0.0.1:${HTTP_PORT}`;
 const ADMIN_KEY = 'test-admin-key-1234';
+
+/** 找一个当前没人用的本地端口 */
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.on('error', reject);
+    srv.listen(0, '127.0.0.1', () => {
+      const { port } = srv.address();
+      srv.close(() => resolve(port));
+    });
+  });
+}
 
 const CHROME_CANDIDATES = [
   'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
@@ -108,8 +126,13 @@ class Cdp {
   }
 }
 
-async function connectCdp() {
-  for (let i = 0; i < 40; i++) {
+async function connectCdp(browser) {
+  // 30 秒预算(原来 10 秒)。机器内存紧张的时候,headless Chrome 启动
+  // 会被换页拖慢,10 秒不够 —— 那种失败看着像代码坏了,其实是机器忙。
+  for (let i = 0; i < 120; i++) {
+    if (browser?.exitCode !== null && browser?.exitCode !== undefined) {
+      throw new Error(`Chrome 启动就退出了(退出码 ${browser.exitCode})`);
+    }
     try {
       const res = await fetch(`http://127.0.0.1:${DEBUG_PORT}/json/list`);
       const targets = await res.json();
@@ -239,7 +262,7 @@ try {
   );
   procs.push(browser);
 
-  const cdp = await connectCdp();
+  const cdp = await connectCdp(browser);
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
 
@@ -337,6 +360,10 @@ try {
     footerInfo.text.includes('Powered By IT Dept'),
     footerInfo.text.replace(/\s+/g, ' ').trim(),
   );
+  const zhFooterHint = await cdp.eval(
+    'document.querySelector("#footer-hint")?.textContent?.trim()',
+  );
+  check('★ 中文页脚文案正确', zhFooterHint === '一眼知门况，免跑空一趟。', `实际="${zhFooterHint}"`);
   check(
     '★ 页脚没有版本号',
     !footerInfo.text.includes('v1.0.0') && !footerInfo.hasVersionEl,
@@ -355,6 +382,14 @@ try {
     'document.querySelector("article.door .state__title")?.textContent?.trim()',
   );
   check('★ 切到英文后「门开着」变成「Door Open」', enState === 'Door Open', `实际="${enState}"`);
+  const enFooterHint = await cdp.eval(
+    'document.querySelector("#footer-hint")?.textContent?.trim()',
+  );
+  check(
+    '★ 英文页脚文案正确',
+    enFooterHint === 'Glance before you leave, no need to grieve.',
+    `实际="${enFooterHint}"`,
+  );
   const htmlLang = await cdp.eval('document.documentElement.lang');
   check('★ documentElement.lang 变成 en', htmlLang === 'en', `实际="${htmlLang}"`);
   const enName = await cdp.eval(
