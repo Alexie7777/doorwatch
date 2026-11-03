@@ -210,6 +210,27 @@ try {
     stamp ? `期望 /style.css?v=${stamp}` : '',
   );
 
+  // ★ index.html 里引用的**每一个**本地静态资源都得带戳 ——
+  //   漏掉一个(比如 icon.svg),改完图标手机上还是旧的,和标题闪一下是一回事。
+  const localRefs = [
+    ...new Set(
+      [...html.matchAll(/(?:src|href)\s*=\s*["'](\/[^"']+)["']/g)].map((m) => m[1]),
+    ),
+  ];
+  const unstamped = localRefs.filter(
+    (u) => /\.(css|js|svg|webmanifest|png|jpe?g|gif|ico|webp)(\?|$)/.test(u) && !u.includes('?v='),
+  );
+  check(
+    '★ HTML 里所有本地静态资源都带版本戳',
+    unstamped.length === 0,
+    unstamped.length ? `漏戳: ${unstamped.join(', ')}` : `${localRefs.length} 个引用全部带戳`,
+  );
+  check(
+    'HTML 里没有漏掉的静态资源引用',
+    localRefs.length >= 4,
+    `共 ${localRefs.length} 个本地引用`,
+  );
+
   const appJs = await (await fetch(`${BASE}/app.js`)).text();
   check(
     '★ 模块依赖 i18n.js 也带版本戳(修复闪标题的关键)',

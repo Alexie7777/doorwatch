@@ -152,10 +152,17 @@ function serveStatic(req, res, pathname) {
 
   let body;
   if (ext === '.html') {
+    // ★ index.html 里引用的**每一个**本地静态资源都要带戳:
+    //   style.css / app.js / icon.svg / manifest.webmanifest ……
+    //   URL 恒定不变 = 可能被浏览器或中间代理一直留着旧副本。
+    //   只给 app.js 加戳、漏掉 icon.svg,改完图标手机上还是旧的 —— 一模一样的坑。
     body = Buffer.from(
       fs
         .readFileSync(target, 'utf8')
-        .replace(/(\/(?:style\.css|app\.js))(["'])/g, `$1?v=${stamp}$2`),
+        .replace(
+          /(\/[\w.-]+\.(?:css|js|svg|webmanifest|png|jpe?g|gif|ico|webp))(["'])/g,
+          `$1?v=${stamp}$2`,
+        ),
       'utf8',
     );
   } else if (ext === '.js') {
