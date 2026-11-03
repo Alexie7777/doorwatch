@@ -192,38 +192,45 @@ try {
   check('前端资源可访问', asset.ok, `HTTP ${asset.status}`);
 
   // --- 6b. 静态资源缓存链 ---
-  // ★ 这一组是在钉一个真 bug:页面刷新时先闪一下新标题,
-  //   随后又被旧文案盖回去。根因是模块依赖 (app.js → ./i18n.js)
-  //   的 URL 恒定不变,浏览器(或中间的反向代理)可以一直留旧副本。
-  //   修法:所有 .js 的相对模块 import 都要带版本戳,再加 ETag 兜底。
+  // ★ 这一组在钉一个真 bug:页面刷新时先闪一下新标题,
+  //   随后又被旧文案盖回去。
+  //   根因是**旧版本的 app.js 被缓存住了**,而它的 updateTitle()
+  //   会把页头写成门名(IT 办公室)。
+  //   两道防线:
+  //     ① 版本戳放在**路径**里(/v/<戳>/app.js)——
+  //        反向代理的缓存键哪怕只看路径、不看查询串,路径变了也会回源;
+  //     ② 页头品牌名改成静态 HTML,JS 碰不到,旧脚本无从覆盖。
   const stamp = healthy.build;
+  const vprefix = `/v/${stamp}`;
   check('健康检查暴露 build 指纹(用于核对缓存版本)', Boolean(stamp), `build=${stamp}`);
 
   check(
-    'HTML 外壳引用带版本戳的 app.js',
-    html.includes(`/app.js?v=${stamp}`),
-    stamp ? `期望 /app.js?v=${stamp}` : '',
+    'HTML 外壳引用带版本前缀的 app.js',
+    html.includes(`${vprefix}/app.js`),
+    stamp ? `期望 ${vprefix}/app.js` : '',
   );
   check(
-    'HTML 外壳引用带版本戳的 style.css',
-    html.includes(`/style.css?v=${stamp}`),
-    stamp ? `期望 /style.css?v=${stamp}` : '',
+    'HTML 外壳引用带版本前缀的 style.css',
+    html.includes(`${vprefix}/style.css`),
+    stamp ? `期望 ${vprefix}/style.css` : '',
   );
 
-  // ★ index.html 里引用的**每一个**本地静态资源都得带戳 ——
+  // ★ index.html 里引用的**每一个**本地静态资源都得带版本前缀 ——
   //   漏掉一个(比如 icon.svg),改完图标手机上还是旧的,和标题闪一下是一回事。
   const localRefs = [
     ...new Set(
       [...html.matchAll(/(?:src|href)\s*=\s*["'](\/[^"']+)["']/g)].map((m) => m[1]),
     ),
   ];
-  const unstamped = localRefs.filter(
-    (u) => /\.(css|js|svg|webmanifest|png|jpe?g|gif|ico|webp)(\?|$)/.test(u) && !u.includes('?v='),
+  const unversioned = localRefs.filter(
+    (u) =>
+      /\.(css|js|svg|webmanifest|png|jpe?g|gif|ico|webp)$/.test(u) &&
+      !u.startsWith(`${vprefix}/`),
   );
   check(
-    '★ HTML 里所有本地静态资源都带版本戳',
-    unstamped.length === 0,
-    unstamped.length ? `漏戳: ${unstamped.join(', ')}` : `${localRefs.length} 个引用全部带戳`,
+    '★ HTML 里所有本地静态资源都带版本前缀',
+    unversioned.length === 0,
+    unversioned.length ? `漏戳: ${unversioned.join(', ')}` : `${localRefs.length} 个引用全部带前缀`,
   );
   check(
     'HTML 里没有漏掉的静态资源引用',
@@ -233,9 +240,26 @@ try {
 
   const appJs = await (await fetch(`${BASE}/app.js`)).text();
   check(
-    '★ 模块依赖 i18n.js 也带版本戳(修复闪标题的关键)',
-    appJs.includes(`./i18n.js?v=${stamp}`),
-    stamp ? `期望 ./i18n.js?v=${stamp}` : '',
+    '★ 模块依赖 i18n.js 也带版本前缀(修复闪标题的关键)',
+    appJs.includes(`${vprefix}/i18n.js`),
+    stamp ? `期望 ${vprefix}/i18n.js` : '',
+  );
+
+  // 版本化路径本身要能取到东西
+  const versioned = await fetch(`${BASE}${vprefix}/app.js`);
+  check(
+    '★ 版本化路径能正常取到资源',
+    versioned.ok && (await versioned.text()).includes('i18n.js'),
+    `HTTP ${versioned.status}`,
+  );
+
+  // ★ 旧戳的版本化路径也要返回**当前**内容:
+  //   万一浏览器手里攥着旧外壳,它引用的资源也必须是新的。
+  const oldStampPath = await fetch(`${BASE}/v/1.0.0-oldstamp/app.js`);
+  check(
+    '★ 旧戳路径返回的是当前内容(不挑版本)',
+    oldStampPath.ok && (await oldStampPath.text()).includes(`${vprefix}/i18n.js`),
+    `HTTP ${oldStampPath.status}`,
   );
 
   const htmlRes = await fetch(`${BASE}/`);
@@ -246,7 +270,7 @@ try {
     `Cache-Control: ${cc}`,
   );
 
-  const assetRes = await fetch(`${BASE}/app.js`);
+  const assetRes = await fetch(`${BASE}${vprefix}/app.js`);
   const etag = assetRes.headers.get('etag');
   check('静态资源返回 ETag', Boolean(etag), etag ?? '');
   check(
@@ -256,15 +280,40 @@ try {
   );
 
   if (etag) {
-    const cond = await fetch(`${BASE}/app.js`, { headers: { 'If-None-Match': etag } });
+    const cond = await fetch(`${BASE}${vprefix}/app.js`, {
+      headers: { 'If-None-Match': etag },
+    });
     check('★ 带 If-None-Match 的重复请求返回 304', cond.status === 304, `HTTP ${cond.status}`);
   }
 
-  const stale = await fetch(`${BASE}/app.js`, { headers: { 'If-None-Match': 'W/"nope"' } });
+  const stale = await fetch(`${BASE}${vprefix}/app.js`, {
+    headers: { 'If-None-Match': 'W/"nope"' },
+  });
   check(
     'ETag 不匹配时正常返回 200 正文',
     stale.status === 200 && (await stale.text()).includes('i18n.js'),
     `HTTP ${stale.status}`,
+  );
+
+  // manifest 里的图标、主屏幕图标名,也要跟着版本走
+  const manifest = await (await fetch(`${BASE}${vprefix}/manifest.webmanifest`)).text();
+  check(
+    '★ manifest 里的图标也带版本前缀',
+    manifest.includes(`${vprefix}/icon.svg`) && !manifest.includes('__STAMP__'),
+    manifest.includes(`${vprefix}/icon.svg`) ? '' : manifest.slice(0, 200),
+  );
+  check(
+    'manifest 的 start_url / scope 没被版本前缀污染',
+    manifest.includes('"start_url": "/"') && manifest.includes('"scope": "/"'),
+    '',
+  );
+
+  // Service Worker 的占位符要替换掉
+  const swText = await (await fetch(`${BASE}/sw.js`)).text();
+  check(
+    '★ Service Worker 的占位符已换成版本前缀',
+    !swText.includes('__STAMP__') && swText.includes(`${vprefix}/app.js`),
+    swText.includes('__STAMP__') ? '还有没替换的占位符' : '',
   );
 
   // --- 7. 额外的纯 HTTP 端口 ---

@@ -6,18 +6,26 @@
    但换来的是"改了样式/逻辑马上生效",不用等缓存过期。
    真正需要的是离线时还能打开,这个由缓存兜底保证。 */
 
-const CACHE = 'doorwatch-v6';
-// 只预缓存外壳。style.css / app.js 在 index.html 里带 ?v= 版本戳,
-// 运行时按带戳的 URL 缓存,避免同一份资源在缓存里存两份。
-// i18n.js 是 app.js 的模块依赖,路径不带版本戳,这里一并预缓存,离线才开得了。
-// wechat-qr.jpg 也预缓存 —— 断网时同事照样能扫到值班微信。
+const CACHE = 'doorwatch' + '__STAMP__'.replace(/[^\w.-]/g, '-');
+/*
+ * 只预缓存外壳。style.css / app.js 在 index.html 里带版本前缀,
+ * 运行时按带前缀的 URL 缓存,避免同一份资源在缓存里存两份。
+ * i18n.js 是 app.js 的模块依赖,同样要预缓存,离线才开得了。
+ * wechat-qr.jpg 也预缓存 —— 断网时同事照样能扫到值班微信。
+ *
+ * __STAMP__ 是占位符:服务端发这个文件时会把它换成当前这一版的版本前缀
+ * (/v/<戳>)。这样每次部署,Service Worker 的内容都会变 → 浏览器会更新它,
+ * activate 时把上一版的缓存整个删掉,不会越攒越多。
+ */
 const SHELL = [
   '/',
   '/index.html',
-  '/icon.svg',
-  '/manifest.webmanifest',
-  '/i18n.js',
-  '/wechat-qr.jpg',
+  '__STAMP__/icon.svg',
+  '__STAMP__/manifest.webmanifest',
+  '__STAMP__/i18n.js',
+  '__STAMP__/app.js',
+  '__STAMP__/style.css',
+  '__STAMP__/wechat-qr.jpg',
 ];
 
 self.addEventListener('install', (event) => {

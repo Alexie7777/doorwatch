@@ -228,9 +228,9 @@ function render() {
       return `
       <article class="door door--${meta.cls}" data-door="${esc(door.id)}">
         <div class="door__head">
-          <h2 class="door__name">${esc(name)}
+          <h1 class="door__name">${esc(name)}
             ${location ? `<span class="door__loc">${esc(location)}</span>` : ''}
-          </h2>
+          </h1>
           <div>${onlineBadge} ${overrideBadge} ${batteryBadge}</div>
         </div>
 
@@ -255,8 +255,6 @@ function render() {
       </article>`;
     })
     .join('');
-
-  updateTitle();
 }
 
 /**
@@ -274,22 +272,16 @@ function tick() {
 }
 
 /**
- * 更新页头标题。
+ * 更新页头标题 —— 已经不需要了。
  *
- * 只有一扇门时直接用它的名字;多扇门就用统称,别让标题撒谎。
- * (以前标题下面还有一行副标题,写「有人值班,可以直接过去」——
- *  那行已经删了:门卡片里本来就有这句,页头再说一遍是重复。)
- */
-/**
- * 页头标题 = 应用名(品牌)。
+ * ★ 页头品牌名「不徒步 · nohike」现在是 index.html 里的静态文本,
+ *   JS 一个字都不改它。
  *
- * 以前这里会跟着门的数量变:一扇门显示门名、多扇门显示「IT 在岗状态」。
- * 品牌定了就固定下来 —— 门名在下面的卡片里写着,页头不用再重复一遍。
+ *   为什么这么较劲:以前这里是 JS 写的,旧版本的 app.js 就能把品牌名
+ *   盖成门名 —— 手机上表现就是「刷新时先闪一下新标题,又变回 IT 办公室」。
+ *   品牌中英文一模一样,本来就不需要跟着语言切换,那就干脆别交给 JS。
+ *   门名在下面的卡片里(每扇门 <article> 自己的 <h1>),互不干扰。
  */
-function updateTitle() {
-  const title = document.querySelector('.topbar h1');
-  if (title) title.textContent = t('appTitle');
-}
 
 /* ------------------------------------------------------------------ *
  * 语言
@@ -341,7 +333,6 @@ async function loadDoors() {
     render();
   } catch (err) {
     state.connected = false;
-    updateTitle();
     $('#conn-dot')?.classList.add('dot--bad');
   }
 }
@@ -385,7 +376,6 @@ function connectSSE() {
   es.onerror = () => {
     state.connected = false;
     $('#conn-dot')?.classList.remove('dot--on');
-    updateTitle();
     // EventSource 自带重连,这里只更新 UI。
     // 万一它不重试(见上面的说明),看门狗会兜底。
     startFallbackPoll();

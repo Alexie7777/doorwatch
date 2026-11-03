@@ -73,7 +73,15 @@ body {
   object-fit: cover;
 }
 
-.topbar h1 {
+/*
+ * 页头品牌名。
+ * 两种写法都留着:
+ *   .topbar__brand —— 现在用的(静态 HTML,JS 不碰)
+ *   .topbar h1      —— 旧版 index.html 还在用,顺手兼容一下,
+ *                      不然万一代理发了个旧外壳过来,标题会变成默认大号字
+ */
+.topbar h1,
+.topbar__brand {
   margin: 0;
   font-size: 17px;
   font-weight: 650;

@@ -96,7 +96,7 @@ const MIME = {
 /**
  * 给页面资源算一个版本戳。
  *
- * 用途:index.html 里引用 /style.css、/app.js 时带上 ?v=<戳>。
+ * 用途:index.html 里引用 /style.css、/app.js 时带上版本前缀。
  * 一旦改过这些文件,戳就变,URL 也就变,浏览器和 Service Worker
  * 都不会再拿旧版资源出来 —— 内部工具改完刷新就得生效,不能等缓存过期。
  */
@@ -117,8 +117,33 @@ function buildStamp() {
   return cachedStamp;
 }
 
+/**
+ * 静态资源的版本前缀。
+ *
+ * ★ 为什么把戳放在**路径**里,而不是用 ?v=<戳> 查询参数:
+ *
+ *   查询参数这一层,很多反向代理的缓存键只看路径($uri),不看查询串。
+ *   戳变了、URL 的查询串变了,缓存的键却没变 —— 代理照样把旧的那份
+ *   app.js 发给浏览器。症状是:页面先闪一下新标题,又被旧文案盖回去。
+ *   (这个坑真踩过,见 README「页面资源带版本戳」那条。)
+ *
+ *   放进路径里就不一样了:/v/<戳>/app.js —— 不管代理怎么算缓存键,
+ *   路径变了就是一条全新的缓存,一定回源。
+ *
+ *   注意:服务端不按戳挑内容,任何 /v/<任意戳>/xxx 都返回**当前这一版**。
+ *   所以哪怕浏览器手里攥着旧的外壳,它引用的资源也一定是新的。
+ */
+function versionPrefix(stamp) {
+  return `/v/${stamp}`;
+}
+
 function serveStatic(req, res, pathname) {
-  const rel = pathname === '/' ? '/index.html' : pathname;
+  let rel = pathname === '/' ? '/index.html' : pathname;
+
+  // 版本化路径:/v/<戳>/<文件> —— 去掉前缀,取当前这一版的内容
+  const vm = /^\/v\/[^/]+(\/.*)$/.exec(rel);
+  if (vm) rel = vm[1];
+
   // 目录穿越防护
   const target = path.resolve(config.publicDir, `.${rel}`);
   if (!target.startsWith(path.resolve(config.publicDir))) {
@@ -151,30 +176,40 @@ function serveStatic(req, res, pathname) {
   }
 
   let body;
+  const prefix = versionPrefix(stamp);
+
+  // 资源路径里带版本前缀的正则(HTML 和 manifest 共用)
+  const ASSET_PATH = /(\/[\w.-]+\.(?:css|js|svg|webmanifest|png|jpe?g|gif|ico|webp))(["'])/g;
+
   if (ext === '.html') {
-    // ★ index.html 里引用的**每一个**本地静态资源都要带戳:
+    // ★ index.html 里引用的**每一个**本地静态资源都要带版本前缀:
     //   style.css / app.js / icon.svg / manifest.webmanifest ……
     //   URL 恒定不变 = 可能被浏览器或中间代理一直留着旧副本。
     //   只给 app.js 加戳、漏掉 icon.svg,改完图标手机上还是旧的 —— 一模一样的坑。
     body = Buffer.from(
-      fs
-        .readFileSync(target, 'utf8')
-        .replace(
-          /(\/[\w.-]+\.(?:css|js|svg|webmanifest|png|jpe?g|gif|ico|webp))(["'])/g,
-          `$1?v=${stamp}$2`,
-        ),
+      fs.readFileSync(target, 'utf8').replace(ASSET_PATH, `${prefix}$1$2`),
+      'utf8',
+    );
+  } else if (ext === '.webmanifest') {
+    // manifest 里的图标也一样要带前缀(主屏幕图标改了得能换掉)
+    // start_url / scope 是页面路径,不能动 —— 正则只认带扩展名的资源。
+    body = Buffer.from(
+      fs.readFileSync(target, 'utf8').replace(ASSET_PATH, `${prefix}$1$2`),
       'utf8',
     );
   } else if (ext === '.js') {
-    // ★ 模块依赖也要带版本戳。
-    //   以前只给 index.html 里引用的 app.js / style.css 加了戳,
-    //   app.js 里 import 的 './i18n.js' 没加 —— 它的 URL 永远不变,
+    // ★ 模块依赖也要带版本前缀。
+    //   app.js 里 import 的 './i18n.js' 如果不带戳,它的 URL 永远不变,
     //   浏览器(或中间的反向代理)可以一直留着旧副本。
     //   实测出来的症状:页面先闪一下新标题,又被旧 i18n.js 里的文案盖回去。
+    //   这里改成**绝对**的版本化路径,不管 app.js 自己是从哪个 URL 来的,
+    //   依赖都指向同一份版本化资源。
     body = Buffer.from(
       fs
         .readFileSync(target, 'utf8')
-        .replace(/(['"])\.\/([\w.-]+\.js)\1/g, `$1./$2?v=${stamp}$1`),
+        .replace(/(['"])\.\/([\w.-]+\.js)\1/g, `$1${prefix}/$2$1`)
+        // Service Worker 里的 __STAMP__ 占位符 → 当前这一版的版本前缀
+        .replaceAll('__STAMP__', prefix),
       'utf8',
     );
   } else {
@@ -208,7 +243,7 @@ async function handleApi(req, res, url) {
       version: config.version,
       // 构建指纹:public/ 里任何文件改过都会变。
       // 排查「我明明重新部署了,页面怎么还是旧的」时,先看这一行 ——
-      // 它和浏览器地址栏里 /app.js?v= 的那个值是同一个。
+      // 它和浏览器地址栏里 /v/<戳>/app.js 里那个戳是同一个。
       build: buildStamp(),
       uptimeSec: Math.round(process.uptime()),
       doors: listDoors().length,
@@ -364,6 +399,18 @@ async function handleApi(req, res, url) {
 
 async function main() {
   fs.mkdirSync(config.dataDir, { recursive: true });
+
+  // ★ 值班微信二维码也走版本化路径。
+  //   换人值班时只换 public/wechat-qr.jpg 这张图,URL 不变的话
+  //   浏览器(或中间代理)可能还拿着旧图 —— 和 app.js 陈旧是同一个坑。
+  //   config.wechatQr 在 toPublic() 里是每次现读的,这里改了就生效。
+  if (
+    typeof config.wechatQr === 'string' &&
+    config.wechatQr.startsWith('/') &&
+    !config.wechatQr.startsWith('/v/')
+  ) {
+    config.wechatQr = `${versionPrefix(buildStamp())}${config.wechatQr}`;
+  }
 
   const registry = loadDoorRegistry();
   openDb();

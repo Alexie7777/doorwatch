@@ -368,12 +368,35 @@ try {
     `实际="${pageTitle}"`,
   );
   const topbarTitle = await cdp.eval(
-    'document.querySelector(".topbar h1")?.textContent?.trim()',
+    'document.querySelector(".topbar__brand")?.textContent?.trim()',
   );
   check(
     '★ 页头大标题是品牌名',
     topbarTitle === '不徒步 · nohike',
     `实际="${topbarTitle}"`,
+  );
+
+  // ★ 陈旧 app.js 免疫(这是本次修复的核心回归)。
+  //   旧版本的 app.js 里是这么写的:
+  //       const title = document.querySelector('.topbar h1');
+  //       if (!title) return;
+  //       title.textContent = 门名;   // ← 会把品牌名盖成「IT 办公室」
+  //   所以现在页头**不能有** <h1> 给它写 —— 品牌名是静态 HTML,JS 一个字都不碰。
+  const staleAttack = await cdp.eval(`
+    (() => {
+      const before = document.querySelector('.topbar__brand')?.textContent?.trim() ?? null;
+      const h1 = document.querySelector('.topbar h1');
+      if (h1) h1.textContent = 'IT 办公室';
+      const after = document.querySelector('.topbar__brand')?.textContent?.trim() ?? null;
+      return { before, after, hasTopbarH1: !!h1 };
+    })()
+  `);
+  check(
+    '★ 陈旧 app.js 碰不到页头品牌(免疫回归)',
+    staleAttack.hasTopbarH1 === false &&
+      staleAttack.before === '不徒步 · nohike' &&
+      staleAttack.after === '不徒步 · nohike',
+    JSON.stringify(staleAttack),
   );
   const homeScreenTitle = await cdp.eval(
     'document.querySelector(\'meta[name="apple-mobile-web-app-title"]\')?.getAttribute("content")',
@@ -384,23 +407,25 @@ try {
     `实际="${homeScreenTitle}"`,
   );
 
-  // ★ 缓存链:浏览器实际发出去的请求 URL 必须带版本戳。
-  //   app.js → './i18n.js' 的 URL 如果恒定不变,浏览器(或中间的反向代理)
+  // ★ 缓存链:浏览器实际发出去的请求 URL 必须带版本前缀。
+  //   app.js → './i18n.js' 的依赖如果不含戳,浏览器(或中间的反向代理)
   //   就能一直留旧副本 —— 症状是刷新时标题先闪一下新文案、随即被旧文案盖回去。
+  //   版本戳放在**路径**里(/v/<戳>/xxx.js):很多代理的缓存键只看路径、
+  //   不看查询串,只有路径变了才能保证回源拿到新的一份。
   //   这里直接看浏览器真实请求过的资源 URL,比看服务端更接近用户现场。
   const resourceUrls = await cdp.eval(
     'performance.getEntriesByType("resource").map(e => e.name)',
   );
   const i18nUrl = (resourceUrls ?? []).find((u) => u.includes('i18n.js'));
   check(
-    '★ 浏览器请求的 i18n.js 带版本戳',
-    Boolean(i18nUrl && i18nUrl.includes('?v=')),
+    '★ 浏览器请求的 i18n.js 带版本前缀',
+    Boolean(i18nUrl && /\/v\/[^/]+\/i18n\.js$/.test(i18nUrl)),
     i18nUrl ?? '未捕获到 i18n.js 请求',
   );
-  const appJsUrl = (resourceUrls ?? []).find((u) => /\/app\.js(\?|$)/.test(u));
+  const appJsUrl = (resourceUrls ?? []).find((u) => /\/app\.js$/.test(u));
   check(
-    '★ 浏览器请求的 app.js 带版本戳',
-    Boolean(appJsUrl && appJsUrl.includes('?v=')),
+    '★ 浏览器请求的 app.js 带版本前缀',
+    Boolean(appJsUrl && /\/v\/[^/]+\/app\.js$/.test(appJsUrl)),
     appJsUrl ?? '未捕获到 app.js 请求',
   );
   const zhFooterHint = await cdp.eval(

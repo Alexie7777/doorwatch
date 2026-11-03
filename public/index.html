@@ -21,9 +21,15 @@
     <header class="topbar">
       <div class="topbar__title">
         <img class="topbar__logo" src="/icon.svg" alt="" width="34" height="34" />
-        <div>
-          <h1>不徒步 · nohike</h1>
-        </div>
+        <!--
+          ★ 品牌名是**静态 HTML**,不给 JS 改。
+            页面里要是留着一个 <h1> 给脚本写,旧版本的 app.js 就能把品牌名
+            盖成门名 —— 实测症状:刷新时先闪一下「不徒步 · nohike」,
+            随即变成「IT 办公室」。
+            品牌中英文一样,本来也不需要跟着语言切换,那就别交给 JS。
+            (门名在下面的卡片里,那才是每扇门自己的标题。)
+        -->
+        <div class="topbar__brand">不徒步 · nohike</div>
       </div>
       <div class="topbar__actions">
         <!-- 语言切换:按钮上显示的是另一种语言的名字 -->
