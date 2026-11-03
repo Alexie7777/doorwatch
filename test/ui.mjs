@@ -383,6 +383,26 @@ try {
     homeScreenTitle === '不徒步',
     `实际="${homeScreenTitle}"`,
   );
+
+  // ★ 缓存链:浏览器实际发出去的请求 URL 必须带版本戳。
+  //   app.js → './i18n.js' 的 URL 如果恒定不变,浏览器(或中间的反向代理)
+  //   就能一直留旧副本 —— 症状是刷新时标题先闪一下新文案、随即被旧文案盖回去。
+  //   这里直接看浏览器真实请求过的资源 URL,比看服务端更接近用户现场。
+  const resourceUrls = await cdp.eval(
+    'performance.getEntriesByType("resource").map(e => e.name)',
+  );
+  const i18nUrl = (resourceUrls ?? []).find((u) => u.includes('i18n.js'));
+  check(
+    '★ 浏览器请求的 i18n.js 带版本戳',
+    Boolean(i18nUrl && i18nUrl.includes('?v=')),
+    i18nUrl ?? '未捕获到 i18n.js 请求',
+  );
+  const appJsUrl = (resourceUrls ?? []).find((u) => /\/app\.js(\?|$)/.test(u));
+  check(
+    '★ 浏览器请求的 app.js 带版本戳',
+    Boolean(appJsUrl && appJsUrl.includes('?v=')),
+    appJsUrl ?? '未捕获到 app.js 请求',
+  );
   const zhFooterHint = await cdp.eval(
     'document.querySelector("#footer-hint")?.textContent?.trim()',
   );

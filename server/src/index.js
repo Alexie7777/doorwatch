@@ -130,14 +130,44 @@ function serveStatic(req, res, pathname) {
     return;
   }
   const ext = path.extname(target).toLowerCase();
+  const st = fs.statSync(target);
+  const stamp = buildStamp();
+
+  // ★ ETag 要把 buildStamp() 也算进去。
+  //   因为正文是被改写过的(注入 ?v=戳),别的文件一变,这份的正文也跟着变;
+  //   只用本文件的 mtime/size 算 ETag,会出现"这份没变 → 回 304"，
+  //   而实际上它引用的戳变了、正文已经不同 —— 浏览器就一直拿着旧版。
+  const etag = `W/"${stamp}-${Math.floor(st.mtimeMs).toString(36)}-${st.size.toString(16)}"`;
+
+  // 条件请求:浏览器/中间代理拿 ETag 来问"变了吗",没变就回 304,不重传正文。
+  // 有了这个,即使某个资源漏了版本戳,也不会一直用旧副本。
+  const inm = String(req.headers['if-none-match'] ?? '')
+    .split(',')
+    .map((s) => s.trim());
+  if (inm.includes(etag) || inm.includes('*')) {
+    res.writeHead(304, { ETag: etag, 'Cache-Control': 'no-cache' });
+    res.end();
+    return;
+  }
 
   let body;
   if (ext === '.html') {
-    const stamp = buildStamp();
     body = Buffer.from(
       fs
         .readFileSync(target, 'utf8')
         .replace(/(\/(?:style\.css|app\.js))(["'])/g, `$1?v=${stamp}$2`),
+      'utf8',
+    );
+  } else if (ext === '.js') {
+    // ★ 模块依赖也要带版本戳。
+    //   以前只给 index.html 里引用的 app.js / style.css 加了戳,
+    //   app.js 里 import 的 './i18n.js' 没加 —— 它的 URL 永远不变,
+    //   浏览器(或中间的反向代理)可以一直留着旧副本。
+    //   实测出来的症状:页面先闪一下新标题,又被旧 i18n.js 里的文案盖回去。
+    body = Buffer.from(
+      fs
+        .readFileSync(target, 'utf8')
+        .replace(/(['"])\.\/([\w.-]+\.js)\1/g, `$1./$2?v=${stamp}$1`),
       'utf8',
     );
   } else {
@@ -147,9 +177,11 @@ function serveStatic(req, res, pathname) {
   res.writeHead(200, {
     'Content-Type': MIME[ext] ?? 'application/octet-stream',
     'Content-Length': body.length,
+    ETag: etag,
     // 一律 no-cache:资源很小,让浏览器每次跟服务器校验一下,
     // 改完样式/逻辑刷新即生效。离线缓存由 Service Worker 负责,不需要 HTTP 缓存。
-    'Cache-Control': 'no-cache',
+    // HTML 外壳额外禁存 —— 它引用的是带戳的资源,外壳本身必须永远是最新的那一份。
+    'Cache-Control': ext === '.html' ? 'no-cache, no-store, must-revalidate' : 'no-cache',
   });
   res.end(body);
 }

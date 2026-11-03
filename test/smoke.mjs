@@ -191,6 +191,61 @@ try {
   const asset = await fetch(`${BASE}/app.js`);
   check('前端资源可访问', asset.ok, `HTTP ${asset.status}`);
 
+  // --- 6b. 静态资源缓存链 ---
+  // ★ 这一组是在钉一个真 bug:页面刷新时先闪一下新标题,
+  //   随后又被旧文案盖回去。根因是模块依赖 (app.js → ./i18n.js)
+  //   的 URL 恒定不变,浏览器(或中间的反向代理)可以一直留旧副本。
+  //   修法:所有 .js 的相对模块 import 都要带版本戳,再加 ETag 兜底。
+  const stamp = healthy.build;
+  check('健康检查暴露 build 指纹(用于核对缓存版本)', Boolean(stamp), `build=${stamp}`);
+
+  check(
+    'HTML 外壳引用带版本戳的 app.js',
+    html.includes(`/app.js?v=${stamp}`),
+    stamp ? `期望 /app.js?v=${stamp}` : '',
+  );
+  check(
+    'HTML 外壳引用带版本戳的 style.css',
+    html.includes(`/style.css?v=${stamp}`),
+    stamp ? `期望 /style.css?v=${stamp}` : '',
+  );
+
+  const appJs = await (await fetch(`${BASE}/app.js`)).text();
+  check(
+    '★ 模块依赖 i18n.js 也带版本戳(修复闪标题的关键)',
+    appJs.includes(`./i18n.js?v=${stamp}`),
+    stamp ? `期望 ./i18n.js?v=${stamp}` : '',
+  );
+
+  const htmlRes = await fetch(`${BASE}/`);
+  const cc = htmlRes.headers.get('cache-control') ?? '';
+  check(
+    'HTML 外壳禁用缓存(no-store)',
+    /no-store/.test(cc) && /no-cache/.test(cc),
+    `Cache-Control: ${cc}`,
+  );
+
+  const assetRes = await fetch(`${BASE}/app.js`);
+  const etag = assetRes.headers.get('etag');
+  check('静态资源返回 ETag', Boolean(etag), etag ?? '');
+  check(
+    'ETag 包含 build 指纹(别的文件变了正文也会变)',
+    Boolean(etag && stamp && etag.includes(stamp)),
+    etag ?? '',
+  );
+
+  if (etag) {
+    const cond = await fetch(`${BASE}/app.js`, { headers: { 'If-None-Match': etag } });
+    check('★ 带 If-None-Match 的重复请求返回 304', cond.status === 304, `HTTP ${cond.status}`);
+  }
+
+  const stale = await fetch(`${BASE}/app.js`, { headers: { 'If-None-Match': 'W/"nope"' } });
+  check(
+    'ETag 不匹配时正常返回 200 正文',
+    stale.status === 200 && (await stale.text()).includes('i18n.js'),
+    `HTTP ${stale.status}`,
+  );
+
   // --- 7. 额外的纯 HTTP 端口 ---
   // ★ 这个端口**直接提供看板**,不是跳转到 HTTPS。
   //   微信内置浏览器打不开自签证书的 HTTPS(连"高级 → 继续"都不给),
