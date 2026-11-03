@@ -280,18 +280,15 @@ function tick() {
  * (以前标题下面还有一行副标题,写「有人值班,可以直接过去」——
  *  那行已经删了:门卡片里本来就有这句,页头再说一遍是重复。)
  */
+/**
+ * 页头标题 = 应用名(品牌)。
+ *
+ * 以前这里会跟着门的数量变:一扇门显示门名、多扇门显示「IT 在岗状态」。
+ * 品牌定了就固定下来 —— 门名在下面的卡片里写着,页头不用再重复一遍。
+ */
 function updateTitle() {
   const title = document.querySelector('.topbar h1');
-  if (!title) return;
-
-  if (state.doors.length === 1) {
-    const loc = doorLocale(state.doors[0]);
-    title.textContent = loc.name ?? state.doors[0].name;
-  } else if (state.doors.length > 1) {
-    title.textContent = t('statusTitle');
-  } else {
-    title.textContent = t('appTitle');
-  }
+  if (title) title.textContent = t('appTitle');
 }
 
 /* ------------------------------------------------------------------ *
@@ -327,7 +324,7 @@ function applyLang() {
   const desc = document.querySelector('meta[name="description"]');
   if (desc) desc.setAttribute('content', t('description'));
   const homeTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
-  if (homeTitle) homeTitle.setAttribute('content', t('appTitle'));
+  if (homeTitle) homeTitle.setAttribute('content', t('homeTitle'));
 }
 
 /* ------------------------------------------------------------------ *

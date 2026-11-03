@@ -367,6 +367,22 @@ try {
     pageTitle === '不徒步 · nohike — IT 办公室状态',
     `实际="${pageTitle}"`,
   );
+  const topbarTitle = await cdp.eval(
+    'document.querySelector(".topbar h1")?.textContent?.trim()',
+  );
+  check(
+    '★ 页头大标题是品牌名',
+    topbarTitle === '不徒步 · nohike',
+    `实际="${topbarTitle}"`,
+  );
+  const homeScreenTitle = await cdp.eval(
+    'document.querySelector(\'meta[name="apple-mobile-web-app-title"]\')?.getAttribute("content")',
+  );
+  check(
+    '★ 主屏幕图标名是短名(不会被截断)',
+    homeScreenTitle === '不徒步',
+    `实际="${homeScreenTitle}"`,
+  );
   const zhFooterHint = await cdp.eval(
     'document.querySelector("#footer-hint")?.textContent?.trim()',
   );

@@ -100,7 +100,7 @@
 
 ```
 ┌────────────────────────────────────────┐
-│ ●  IT 在岗状态                  [EN][●]│
+│ ●  不徒步 · nohike             [EN][●]│
 ├────────────────────────────────────────┤
 │ IT 办公室  A512                [传感器在线]│
 │   🔓 门开着                            │
@@ -132,8 +132,8 @@
 
 | 当前界面语言 | 按钮上显示 | 页面标题 | 状态文案 |
 |---|---|---|---|
-| 中文(默认) | `EN` | IT 在岗状态 | 门开着 / 门关着 / 状态未知 |
-| 英文 | `中` | IT Office Status | Door Open / Door Closed / Unknown |
+| 中文(默认) | `EN` | 不徒步 · nohike | 门开着 / 门关着 / 状态未知 |
+| 英文 | `中` | 不徒步 · nohike | Door Open / Door Closed / Unknown |
 
 ![中文看板](test/artifacts/dashboard-zh.png)
 ![English dashboard](test/artifacts/dashboard-en.png)

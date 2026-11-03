@@ -20,8 +20,9 @@ const DICT = {
   zh: {
     /* ---- 页面主体 ---- */
     pageTitle: '不徒步 · nohike — IT 办公室状态',
-    appTitle: 'IT 办公室',
-    statusTitle: 'IT 在岗状态',
+    appTitle: '不徒步 · nohike',
+    // 主屏幕图标下面那行 —— 比 appTitle 短,不然会被系统截断成「不徒步 · noh…」
+    homeTitle: '不徒步',
     stateOpen: '门开着',
     stateClosed: '门关着',
     stateUnknown: '状态未知',
@@ -79,8 +80,9 @@ const DICT = {
   en: {
     /* ---- 页面主体 ---- */
     pageTitle: '不徒步 · nohike — IT Office Status',
-    appTitle: 'IT Office',
-    statusTitle: 'IT Office Status',
+    appTitle: '不徒步 · nohike',
+    // 主屏幕图标下面那行 —— 比 appTitle 短,不然会被系统截断成「不徒步 · noh…」
+    homeTitle: '不徒步',
     stateOpen: 'Door Open',
     stateClosed: 'Door Closed',
     stateUnknown: 'Unknown',
