@@ -64,6 +64,35 @@ const STATES = [
     last_updated: iso(120_000),
     last_reported: iso(120_000),
   },
+  // ★ 蓝牙网关 —— 「网关断了但传感器还显示在线」那个问题的主角。
+  //   两路都在,正好是对照组:
+  //     推送型(xiaomi_home):网关一掉线,云端把它标离线 → state 变 unavailable,
+  //                          last_reported 也冻住 —— 这才是能用的存活信号。
+  //     轮询型(xiaomi_miot):云端一直返回缓存值,last_reported 照常推进 —— 读不出失联。
+  {
+    entity_id: 'binary_sensor.xiaomi_gateway_status',
+    state: 'unavailable',
+    attributes: {
+      friendly_name: '小米蓝牙网关',
+      device_status: 'offline',
+      last_seen: iso(900_000),
+    },
+    last_changed: iso(900_000),
+    last_updated: iso(900_000),
+    last_reported: iso(900_000),
+  },
+  {
+    entity_id: 'sensor.isa_lumi_gateway_signal',
+    state: '-58',
+    attributes: {
+      friendly_name: '网关 WiFi 信号',
+      rssi: -58,
+      device_status: 'online',
+    },
+    last_changed: iso(900_000),
+    last_updated: iso(60_000),
+    last_reported: iso(60_000),
+  },
 ];
 
 /** entity_id → 集成平台 */
@@ -71,6 +100,8 @@ const REGISTRY = {
   'binary_sensor.isa_dw2hl_b95b_contact_state': 'xiaomi_home',
   'binary_sensor.isa_dw2hl_b95b_magnet_sensor': 'xiaomi_miot',
   'sensor.doorwatch_it_office_door_state': 'template',
+  'binary_sensor.xiaomi_gateway_status': 'xiaomi_home',
+  'sensor.isa_lumi_gateway_signal': 'xiaomi_miot',
 };
 
 /* ------------------------------------------------------------------ *
@@ -221,6 +252,38 @@ check('查出了 contact_state 归属 xiaomi_home', /contact_state[\s\S]{0,400}�
 check('识别出已存在的 doorwatch 模板实体', /sensor\.doorwatch_it_office_door_state\s+=\s+CLOSED/.test(out));
 check('给出了轮询型/推送型的判断说明', out.includes('轮询') && out.includes('推送'));
 check('提示了推送型该怎么改', out.includes('STALE_SECONDS') || out.includes('轮询型'));
+
+/* ------------------------------------------------------------------ *
+ * --grep:查蓝牙网关
+ *
+ * ★ 这是「网关断了但看板说在线」那个问题的取证入口:
+ *   网关实体的状态到底能不能读、属于哪个集成、有没有可用属性,
+ *   全靠这一段输出。
+ * ------------------------------------------------------------------ */
+const gw = await runProbe(['--grep', '网关']);
+console.log(gw.out);
+console.log('--- 断言(--grep 网关)---\n');
+
+check('grep 正常退出', gw.code === 0, `exit=${gw.code}`);
+check('找出了推送型的网关实体', gw.out.includes('binary_sensor.xiaomi_gateway_status'));
+check('找出了轮询型的网关实体', gw.out.includes('sensor.isa_lumi_gateway_signal'));
+check(
+  '★ 显示了网关实体的归属集成',
+  /xiaomi_gateway_status[\s\S]{0,400}归属集成: xiaomi_home/.test(gw.out),
+);
+check(
+  '★ 打印了实体的全部属性(信号可能藏在属性里)',
+  gw.out.includes('device_status=offline') && gw.out.includes('rssi=-58'),
+);
+check(
+  '★ 标出了可能的存活信号属性',
+  gw.out.includes('可能的存活信号') && gw.out.includes('device_status'),
+);
+check('说明了该看哪几项', gw.out.includes('unavailable') && gw.out.includes('last_reported'));
+check(
+  '提醒了轮询型读不出失联',
+  gw.out.includes('网关断线') || gw.out.includes('读不出失联'),
+);
 
 server.close();
 console.log(`\n${failures === 0 ? '✅ ha-probe 测试全部通过' : `❌ ${failures} 项未通过`}\n`);

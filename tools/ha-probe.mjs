@@ -32,6 +32,7 @@ function parseArgs(argv) {
     if (a === '--host') out.host = argv[++i];
     else if (a === '--token') out.token = argv[++i];
     else if (a === '--entity') out.entity = argv[++i];
+    else if (a === '--grep') out.grep = argv[++i];
     else if (a === '--watch') out.watch = Number(argv[++i]) || 0;
     else if (a === '--help' || a === '-h') out.help = true;
     else if (!a.startsWith('-')) out.host ??= a;
@@ -50,6 +51,7 @@ if (args.help) {
   --host <url>     HA 地址(默认 http://homeassistant.local:8123,也可用环境变量 HA_URL)
   --token <tok>    长期访问令牌(也可用环境变量 HA_TOKEN)
   --entity <id>    只看这一个实体
+  --grep <词>      按关键词找实体(不限平台)—— 用来查蓝牙网关这类设备
   --watch <秒>     观察 N 秒,看时间戳有没有在推进
 `);
   process.exit(0);
@@ -111,6 +113,29 @@ function stampLines(s) {
     `      last_reported ${age(s.last_reported)}   ← 集成每轮写一次就动`,
   ];
 }
+
+/**
+ * 把实体的**全部**属性打出来。
+ *
+ * 为什么要看全量:判断「这个设备还在不在」时,信号经常藏在属性里 ——
+ * online / device_status / last_seen / rssi / connect_type 之类,
+ * 而且有些集成的实体状态压根不变(永远是某个读数),状态本身没用。
+ */
+function attrLines(s) {
+  const a = s.attributes || {};
+  const keys = Object.keys(a).filter((k) => k !== 'friendly_name');
+  if (!keys.length) return '(无)';
+  return keys
+    .map((k) => {
+      const v = a[k];
+      if (v === null || typeof v !== 'object') return `${k}=${String(v)}`;
+      return `${k}=${JSON.stringify(v).slice(0, 140)}`;
+    })
+    .join('  ');
+}
+
+/** 属性里可能藏着「设备还活着吗」信号的那些键 */
+const LIVENESS_KEYS = /online|offline|available|status|last_seen|lastseen|rssi|signal|connect|reachab/i;
 
 async function snapshot() {
   const states = await api('/api/states');
@@ -181,6 +206,48 @@ async function main() {
   let map = await snapshot();
   const registry = await fetchEntityRegistry();
 
+  // ★ --grep:找任意实体(蓝牙网关、别的门磁……),不限平台。
+  //   「网关断了但看板说在线」这个问题,全靠这一步取证 ——
+  //   关键是看清:它的状态在网关掉线时到底会不会变。
+  let grepHits = [];
+  if (args.grep) {
+    const kw = String(args.grep).toLowerCase();
+    grepHits = [...map.values()].filter(
+      (s) =>
+        s.entity_id.toLowerCase().includes(kw) ||
+        String(s.attributes?.friendly_name ?? '').toLowerCase().includes(kw),
+    );
+    console.log(`\n=== 匹配 "${args.grep}" 的实体(${grepHits.length} 个)===\n`);
+    for (const s of grepHits) {
+      const platform = registry.get(s.entity_id);
+      const attrs = s.attributes || {};
+      const liveness = Object.keys(attrs).filter((k) => LIVENESS_KEYS.test(k));
+      console.log(`  ${s.entity_id}`);
+      console.log(`      ${describe(s)}`);
+      console.log(`      归属集成: ${platform ?? '未知(可能是 YAML 平台或集成未登记)'}`);
+      console.log(...stampLines(s));
+      console.log(`      属性: ${attrLines(s)}`);
+      console.log(
+        liveness.length
+          ? `      ★ 可能的存活信号: ${liveness.join(', ')}`
+          : '      ★ 属性里没有明显的「在线/可达」信号',
+      );
+      console.log('');
+    }
+    if (!grepHits.length) {
+      console.log('  没找到匹配的实体。换个关键词试试,或先列一遍看看叫什么:\n');
+      console.log(`  curl -s -H "Authorization: Bearer <TOKEN>" ${args.host}/api/states | jq -r '.[]|.entity_id' | grep -i '<关键词>'`);
+      console.log('');
+    }
+    console.log('★ 这几项决定「网关状态能不能读」:');
+    console.log('  · state 会不会变成 unavailable —— 掉线时不少集成会这么标记');
+    console.log('  · last_reported 冻了多久 —— 推送型只在设备主动上报时推进,');
+    console.log('    网关一掉线就冻住;轮询型照常推进(那就读不出失联,别指望它)');
+    console.log('  · 归属集成是 xiaomi_home(推送)还是 xiaomi_miot(轮询)');
+    console.log('  · 属性里有没有 online / device_status / last_seen 之类');
+    console.log('');
+  }
+
   const doorwatchSensors = [
     'sensor.doorwatch_it_office_door_state',
     'binary_sensor.doorwatch_it_office_door_readable',
@@ -219,6 +286,7 @@ async function main() {
     console.log(`      ${describe(s)}`);
     console.log(`      归属集成: ${platform ?? '未知(可能是 YAML 平台或集成未登记)'}`);
     console.log(...stampLines(s));
+    if (args.entity) console.log(`      属性: ${attrLines(s)}`);
     console.log('');
   }
 
@@ -244,7 +312,13 @@ async function main() {
 
   if (args.watch > 0) {
     console.log(`--- 观察 ${args.watch} 秒,看哪些时间戳在推进 ---\n`);
-    const before = new Map(candidates.map((s) => [s.entity_id, s]));
+    // 观察对象 = 门磁候选 + --grep 命中的实体
+    // (网关的存活信号全靠这一段看:健康时它会不会自己往前推)
+    const watchSet = [...candidates];
+    for (const s of grepHits) {
+      if (!watchSet.some((x) => x.entity_id === s.entity_id)) watchSet.push(s);
+    }
+    const before = new Map(watchSet.map((s) => [s.entity_id, s]));
     let reportedMoving = 0;
     let updatedMoving = 0;
     await new Promise((r) => setTimeout(r, args.watch * 1000));
@@ -275,6 +349,8 @@ async function main() {
       console.log('集成是**轮询型**:不碰门也会定时上报。');
       console.log('→ 可以用 last_reported 当新鲜度判据,STALE_SECONDS=180 合适。');
       console.log('→ templates.yaml 保持默认即可,不用改。');
+      console.log('→ ⚠️ 但注意:轮询型在**网关断线**时照样会推进(云端一直返回最后一个值),');
+      console.log('   所以它读不出「网关掉线」。要判网关,得看推送型那一路。');
     } else if (updatedMoving > 0) {
       console.log('观察期间状态或属性变了 —— 这轮看不出轮询周期,再等一轮:');
       console.log('→ node tools/ha-probe.mjs --watch 300');

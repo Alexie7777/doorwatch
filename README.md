@@ -250,6 +250,7 @@ curl http://127.0.0.1:8443/api/health
 | 端口被占 | `node tools/check-ports.mjs` |
 | 体检整条链路(看板不更新时先跑这个) | `node tools/doctor.mjs --doorwatch http://<服务器>:8443` |
 | 查 HA 门磁实体与时间戳 | `node tools/ha-probe.mjs --host http://<HA>:8123 --token <TOKEN>` |
+| 查蓝牙网关实体能不能读出状态 | `node tools/ha-probe.mjs --host http://<HA>:8123 --token <TOKEN> --grep 网关 --watch 300` |
 
 ---
 
@@ -1448,7 +1449,7 @@ doorwatch/
 ├── tools/
 │   ├── demo.mjs         #   一键演示
 │   ├── doctor.mjs       #   ★ 链路体检:一条命令查完 5 环,还能现场渲染模板、翻 HA 错误日志
-│   ├── ha-probe.mjs     #   HA 探针:找门磁实体 / 验方向 / 看时间戳
+│   ├── ha-probe.mjs     #   HA 探针:找门磁实体 / 验方向 / 看时间戳(--grep 查网关这类任意实体)
 │   ├── dump-ha-templates.mjs  # 把 HA 真正读到的模板字符串导出成 JSON
 │   ├── ha-templates.mjs  #   读 ha/templates.yaml(dump 和 doctor 共用同一份解析)
 │   ├── ha-template-sim.py    # ★ 离线复刻 HA 的 Jinja 语义,不用装 HA 就能验模板

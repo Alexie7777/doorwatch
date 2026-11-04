@@ -105,13 +105,32 @@ try {
   if (!healthy) throw new Error('服务起不来,终止测试');
 
   // --- 2. 接上 MQTT ---
+  // ★ 别第一次报错就判失败。
+  //   broker 是异步 listen 的,机器负载高(比如同时在跑别的项目的测试)时
+  //   它可能比 HTTP 服务晚几十毫秒才起来 —— 那是「起得慢」,不是「起不来」。
+  //   mqtt.js 自带重连(reconnectPeriod),这里只管等它连上。
   const client = mqtt.connect(`mqtt://127.0.0.1:${MQTT_PORT}`, { reconnectPeriod: 1000 });
-  await new Promise((resolve, reject) => {
-    client.once('connect', resolve);
-    client.once('error', reject);
-    setTimeout(() => reject(new Error('MQTT 连接超时')), 8000);
+  const mqttConnected = await new Promise((resolve) => {
+    const deadline = Date.now() + 15_000;
+    const onConnect = () => {
+      cleanup();
+      resolve(true);
+    };
+    const onError = () => {
+      if (Date.now() > deadline) {
+        cleanup();
+        resolve(false);
+      }
+    };
+    const cleanup = () => {
+      client.off('connect', onConnect);
+      client.off('error', onError);
+    };
+    client.on('connect', onConnect);
+    client.on('error', onError);
   });
-  check('内置 MQTT broker 可连接', true);
+  check('内置 MQTT broker 可连接', mqttConnected);
+  if (!mqttConnected) throw new Error('MQTT broker 连不上,终止测试');
 
   const pub = (topic, payload, opts = {}) =>
     new Promise((resolve) => client.publish(topic, payload, { qos: 1, ...opts }, resolve));
