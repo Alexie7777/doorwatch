@@ -472,7 +472,7 @@ try {
   );
   check(
     '★ 英文页脚文案正确',
-    enFooterHint === 'Glance before you leave, no need to grieve.',
+    enFooterHint === 'Glance before you leave, no need to be grieved.',
     `实际="${enFooterHint}"`,
   );
   const htmlLang = await cdp.eval('document.documentElement.lang');

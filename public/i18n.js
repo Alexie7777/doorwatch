@@ -94,7 +94,7 @@ const DICT = {
     heartbeat: 'Heartbeat',
     today: 'Today: {open} open / {close} closed',
     now: 'Now',
-    footerHint: 'Glance before you leave, no need to grieve.',
+    footerHint: 'Glance before you leave, no need to be grieved.',
     poweredBy: 'Powered By 不徒步 · nohike | IT Dept BIPH',
 
     /* ---- 相对时间 ---- */
