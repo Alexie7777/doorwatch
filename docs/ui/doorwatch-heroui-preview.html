@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1754, height=1240" />
+    <title>doorwatch · HeroUI 版预览</title>
+    <script src="../posters/assets/tailwind.js"></script>
+    <script>
+      /*
+       * HeroUI 的设计 token(Tailwind 扩展色板)。
+       *
+       * HeroUI 本体是 React 组件库,要在浏览器里跑得先上 vite 构建 ——
+       * 那会打破 doorwatch 现在「零构建静态文件」的前提。
+       * 所以这一版是把 HeroUI 的**视觉规范**手工还原:
+       * 语义色板、rounded-medium 圆角、Card 的细描边 + 淡阴影、
+       * Chip 的 rounded-md、HeroUI 默认的 Inter 字体。
+       * 观感对标 HeroUI,依赖为零。
+       *
+       * 暗色那一版用 Tailwind 的 dark: 变体 —— Play CDN 支持 darkMode:'class',
+       * 给 .dark 那个容器加上类就行,不用写两套 HTML。
+       */
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'system-ui', 'Noto Sans SC', 'sans-serif'],
+            },
+            colors: {
+              background: { DEFAULT: '#ffffff', 50: '#ffffff', 100: '#f4f4f5' },
+              foreground: { DEFAULT: '#11181c', 50: '#f9fafb' },
+              default: {
+                50: '#f4f4f5',
+                100: '#e4e4e7',
+                200: '#d4d4d8',
+                300: '#a1a1aa',
+                400: '#71717a',
+                500: '#52525b',
+                600: '#3f3f46',
+                700: '#27272a',
+              },
+              primary: {
+                50: '#eef4ff',
+                100: '#d9e6ff',
+                200: '#bcd3ff',
+                300: '#8eb6ff',
+                400: '#588aff',
+                500: '#006fee',
+                600: '#004bc4',
+                700: '#003a99',
+              },
+              success: {
+                50: '#e8faf0',
+                100: '#d1f4e0',
+                200: '#a3eac6',
+                300: '#74dfa8',
+                400: '#46cd8a',
+                500: '#17c964',
+                600: '#12a150',
+                700: '#0d793d',
+              },
+              warning: {
+                50: '#fefce8',
+                100: '#fee9ae',
+                200: '#fdd68a',
+                300: '#fbc166',
+                400: '#f9a942',
+                500: '#f5a524',
+                600: '#c4841d',
+                700: '#936616',
+              },
+              danger: {
+                50: '#fee7ef',
+                100: '#fdd3e0',
+                200: '#fbaac4',
+                300: '#f880a6',
+                400: '#f45688',
+                500: '#f31260',
+                600: '#c70e4d',
+                700: '#9c0a3d',
+              },
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      /* HeroUI 的 Card 阴影是很淡的一层,不是现在的 shadow-lg */
+      .hero-card {
+        box-shadow:
+          0 1px 2px 0 rgb(0 0 0 / 0.04),
+          0 1px 3px 0 rgb(0 0 0 / 0.06);
+      }
+      .dark .hero-card {
+        box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+      }
+      /* 手机机身 */
+      .phone-frame {
+        box-shadow:
+          0 40px 80px -20px rgb(16 24 40 / 0.35),
+          0 0 0 1px rgb(16 24 40 / 0.08);
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="w-[1754px] h-[1240px] overflow-hidden bg-default-50 flex">
+      <!-- ================= 左栏:说明 ================= -->
+      <div class="w-[640px] shrink-0 px-[72px] pt-[56px] flex flex-col">
+        <span
+          class="inline-flex w-fit items-center rounded-md bg-primary-100 px-3 py-1 text-[21px] font-semibold text-primary-700"
+        >
+          HeroUI 版 · 效果预览
+        </span>
+
+        <h1 class="mt-5 text-[48px] font-bold leading-[1.15] tracking-tight text-foreground">
+          同一份数据，<br />
+          换个组件库的样子。
+        </h1>
+
+        <p class="mt-4 text-[22px] leading-relaxed text-default-500">
+          右边两个手机是 doorwatch 看板在 HeroUI 设计语言下的样子 ——<br />
+          浅色和暗色，跟线上那份数据完全一致。
+        </p>
+
+        <div class="mt-6 h-px w-full bg-default-200"></div>
+
+        <div class="mt-5">
+          <h2 class="text-[24px] font-semibold text-foreground">HeroUI 是什么</h2>
+          <p class="mt-2 text-[20px] leading-relaxed text-default-500">
+            React 的组件库（NextUI 改名而来），Tailwind 做的，配色、圆角、阴影有固定规范。
+            看板这种「状态 + 时间 + 一个二维码」的页面，正好是它的甜点区。
+          </p>
+        </div>
+
+        <div class="mt-5">
+          <h2 class="text-[24px] font-semibold text-foreground">用到的组件</h2>
+          <div class="mt-2 flex flex-wrap gap-[6px]">
+            <span class="rounded-md bg-default-100 px-[10px] py-[3px] text-[18px] font-medium text-default-600">Card</span>
+            <span class="rounded-md bg-default-100 px-[10px] py-[3px] text-[18px] font-medium text-default-600">Chip</span>
+            <span class="rounded-md bg-default-100 px-[10px] py-[3px] text-[18px] font-medium text-default-600">Button</span>
+            <span class="rounded-md bg-default-100 px-[10px] py-[3px] text-[18px] font-medium text-default-600">Divider</span>
+            <span class="rounded-md bg-default-100 px-[10px] py-[3px] text-[18px] font-medium text-default-600">Progress</span>
+            <span class="rounded-md bg-default-100 px-[10px] py-[3px] text-[18px] font-medium text-default-600">Avatar</span>
+            <span class="rounded-md bg-default-100 px-[10px] py-[3px] text-[18px] font-medium text-default-600">Dark mode</span>
+          </div>
+        </div>
+
+        <div class="mt-5">
+          <h2 class="text-[24px] font-semibold text-foreground">真把 React 换上去，代价</h2>
+          <ul class="mt-2 space-y-[6px] text-[19px] leading-snug text-default-500">
+            <li class="flex gap-[10px]">
+              <span class="text-danger-500">×</span>
+              <span>前端从「零构建静态文件」变成要跑 vite，Dockerfile 得加一步</span>
+            </li>
+            <li class="flex gap-[10px]">
+              <span class="text-danger-500">×</span>
+              <span>产物带哈希，Service Worker 的预缓存清单要重做</span>
+            </li>
+            <li class="flex gap-[10px]">
+              <span class="text-danger-500">×</span>
+              <span>体积从几十 KB 涨到几百 KB，framer-motion 就占一大半</span>
+            </li>
+            <li class="flex gap-[10px]">
+              <span class="text-success-600">✓</span>
+              <span>换来成套组件、暗色模式开箱即用，以后加交互不用手写</span>
+            </li>
+          </ul>
+        </div>
+
+        <!-- HeroUI 语义色板 -->
+        <div class="mt-auto flex items-end gap-[8px] pb-[52px]">
+          <div class="h-8 w-8 rounded-md bg-success-500"></div>
+          <div class="h-8 w-8 rounded-md bg-warning-500"></div>
+          <div class="h-8 w-8 rounded-md bg-danger-500"></div>
+          <div class="h-8 w-8 rounded-md bg-primary-500"></div>
+          <div class="h-8 w-8 rounded-md bg-default-200"></div>
+          <span class="ml-2 pb-1 text-[18px] text-default-400">HeroUI 语义色板</span>
+        </div>
+      </div>
+
+      <!-- ================= 右栏:两个手机 ================= -->
+      <div class="flex flex-1 items-start justify-center gap-[52px] pt-[104px]">
+        <!-- ---------- 浅色 ---------- -->
+        <div class="flex flex-col items-center">
+          <div class="phone-frame w-[436px] h-[914px] rounded-[54px] bg-[#1c1c1e] p-[12px]">
+            <div
+              class="w-[412px] h-[890px] overflow-hidden rounded-[42px] bg-background flex flex-col"
+            >
+              <!-- 状态栏 -->
+              <div
+                class="h-[54px] shrink-0 flex items-end justify-between px-[28px] pb-[6px] text-[15px] font-semibold text-foreground"
+              >
+                <span>10:49</span>
+                <div class="flex items-center gap-[6px]">
+                  <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor">
+                    <rect x="0" y="7" width="3" height="4" rx="1" />
+                    <rect x="4.5" y="5" width="3" height="6" rx="1" />
+                    <rect x="9" y="2.5" width="3" height="8.5" rx="1" />
+                    <rect x="13.5" y="0" width="3" height="11" rx="1" opacity=".35" />
+                  </svg>
+                  <svg width="16" height="11" viewBox="0 0 16 12" fill="currentColor">
+                    <path d="M8 10.5 5.5 8a3.5 3.5 0 0 1 5 0L8 10.5Z" />
+                    <path d="M3.8 6.3a6 6 0 0 1 8.4 0" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" />
+                  </svg>
+                  <span
+                    class="ml-[2px] rounded-[5px] border border-default-300 px-[4px] text-[12px] leading-[15px]"
+                    >54</span
+                  >
+                </div>
+              </div>
+
+              <!-- 应用栏 -->
+              <div class="h-[56px] shrink-0 flex items-center justify-between px-[18px]">
+                <div class="flex items-center gap-[10px]">
+                  <div
+                    class="flex h-[34px] w-[34px] items-center justify-center rounded-[10px] bg-primary-500 shadow-[0_3px_12px_rgba(0,111,238,.35)]"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round">
+                      <rect x="7" y="3" width="10" height="18" rx="2" />
+                      <path d="M10 17h4" />
+                    </svg>
+                  </div>
+                  <span class="text-[17px] font-semibold tracking-[.2px] text-foreground"
+                    >不徒步 · nohike</span
+                  >
+                </div>
+                <div class="flex items-center gap-[8px]">
+                  <!-- 主题按钮:半圆 = 跟随系统 -->
+                  <button
+                    class="flex h-[34px] w-[34px] items-center justify-center rounded-full border border-default-200 bg-background text-default-500"
+                  >
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round">
+                      <path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" stroke="none" />
+                      <path d="M12 3a9 9 0 0 1 0 18" />
+                    </svg>
+                  </button>
+                  <button
+                    class="h-[34px] min-w-[44px] rounded-full border border-default-200 bg-background px-[12px] text-[13px] font-semibold leading-none text-default-500"
+                  >
+                    EN
+                  </button>
+                </div>
+              </div>
+
+              <!-- 卡片 1:门开着 -->
+              <div class="mt-[6px] px-[16px]">
+                <div
+                  class="hero-card rounded-[14px] border border-default-200 bg-background p-[16px]"
+                >
+                  <div class="flex items-start justify-between gap-[10px]">
+                    <div class="flex flex-wrap items-baseline gap-[8px]">
+                      <span class="text-[17px] font-semibold text-foreground">IT 办公室</span>
+                      <span class="text-[13px] text-default-400">行政楼 A 座 2F</span>
+                    </div>
+                    <div class="flex shrink-0 gap-[6px]">
+                      <span
+                        class="rounded-md bg-success-100 px-[8px] py-[2px] text-[12px] font-medium text-success-700"
+                        >传感器在线</span
+                      >
+                      <span
+                        class="rounded-md border border-default-200 px-[8px] py-[2px] text-[12px] text-default-500"
+                        >电量 87%</span
+                      >
+                    </div>
+                  </div>
+
+                  <div class="mt-[14px] flex items-center gap-[13px]">
+                    <div
+                      class="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-full bg-success-100"
+                    >
+                      <span class="text-[22px] leading-none">🔓</span>
+                    </div>
+                    <div class="min-w-0">
+                      <div class="text-[22px] font-bold tracking-[.3px] text-success-700">门开着</div>
+                      <p class="mt-[2px] text-[13px] text-default-500">IT 有人在，直接过来就行</p>
+                    </div>
+                  </div>
+
+                  <div class="mt-[14px] h-px w-full bg-default-100"></div>
+
+                  <div class="mt-[12px] flex flex-wrap gap-[16px] text-[12px] text-default-500">
+                    <span>最后变化:<b class="font-medium text-default-600">刚刚</b></span>
+                    <span>心跳:<b class="font-medium text-default-600">刚刚</b></span>
+                    <span>今天:开 <b class="font-medium text-default-600">1</b> 次 / 关 <b class="font-medium text-default-600">0</b> 次</span>
+                  </div>
+
+                  <!-- 24 小时时间轴 -->
+                  <div class="mt-[13px]">
+                    <div class="flex h-[6px] gap-[2px] overflow-hidden rounded-full bg-default-100">
+                      <div class="w-[14%] rounded-full bg-default-200"></div>
+                      <div class="w-[3%] rounded-full bg-success-500"></div>
+                      <div class="w-[8%] rounded-full bg-default-200"></div>
+                      <div class="w-[6%] rounded-full bg-success-500"></div>
+                      <div class="w-[12%] rounded-full bg-default-200"></div>
+                      <div class="w-[4%] rounded-full bg-success-500"></div>
+                      <div class="w-[10%] rounded-full bg-default-200"></div>
+                      <div class="w-[5%] rounded-full bg-success-500"></div>
+                      <div class="w-[38%] rounded-full bg-default-200"></div>
+                    </div>
+                    <div class="mt-[5px] flex justify-between text-[10px] text-default-400">
+                      <span>00:00</span>
+                      <span>现在</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 卡片 2:状态未知 -->
+                <div
+                  class="hero-card mt-[12px] rounded-[14px] border border-default-200 bg-background p-[16px]"
+                >
+                  <div class="flex items-start justify-between gap-[10px]">
+                    <div class="flex flex-wrap items-baseline gap-[8px]">
+                      <span class="text-[17px] font-semibold text-foreground">机房</span>
+                      <span class="text-[13px] text-default-400">行政楼 A 座 1F</span>
+                    </div>
+                    <span
+                      class="shrink-0 rounded-md bg-warning-100 px-[8px] py-[2px] text-[12px] font-medium text-warning-700"
+                      >传感器离线</span
+                    >
+                  </div>
+
+                  <div class="mt-[14px] flex items-center gap-[13px]">
+                    <div
+                      class="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-full bg-warning-100"
+                    >
+                      <span class="text-[22px] leading-none">⚠️</span>
+                    </div>
+                    <div class="min-w-0">
+                      <div class="text-[22px] font-bold tracking-[.3px] text-warning-700">状态未知</div>
+                      <p class="mt-[2px] text-[13px] text-default-500">
+                        传感器没上线，状态未知 —— 请先联系 IT
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="mt-[14px] h-px w-full bg-default-100"></div>
+
+                  <div class="mt-[12px] flex flex-wrap gap-[16px] text-[12px] text-default-500">
+                    <span>最后变化:<b class="font-medium text-default-600">无记录</b></span>
+                    <span>心跳:<b class="font-medium text-default-600">无记录</b></span>
+                    <span>今天:开 <b class="font-medium text-default-600">0</b> 次 / 关 <b class="font-medium text-default-600">0</b> 次</span>
+                  </div>
+
+                  <div class="mt-[13px]">
+                    <div class="flex h-[6px] gap-[2px] overflow-hidden rounded-full bg-default-100">
+                      <div class="flex-1 rounded-full bg-[repeating-linear-gradient(45deg,#e4e4e7,#e4e4e7_3px,#d4d4d8_3px,#d4d4d8_6px)]"></div>
+                    </div>
+                    <div class="mt-[5px] flex justify-between text-[10px] text-default-400">
+                      <span>00:00</span>
+                      <span>现在</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 页脚 -->
+              <div class="mt-auto px-[16px] pb-[22px] pt-[16px] text-center">
+                <p class="m-0 text-[12px] text-default-400">一眼知门况，免跑空一趟。</p>
+                <p class="mt-[6px] text-[12px] tracking-[.4px] text-default-500">
+                  Powered By 不徒步 · nohike | IT Dept BIPH
+                </p>
+              </div>
+            </div>
+          </div>
+          <span class="mt-[20px] text-[21px] font-medium text-default-500">浅色</span>
+        </div>
+
+        <!-- ---------- 暗色 ---------- -->
+        <div class="flex flex-col items-center">
+          <div class="phone-frame w-[436px] h-[914px] rounded-[54px] bg-[#1c1c1e] p-[12px]">
+            <div
+              class="dark w-[412px] h-[890px] overflow-hidden rounded-[42px] bg-[#0a0a0b] flex flex-col"
+            >
+              <!-- 状态栏 -->
+              <div
+                class="h-[54px] shrink-0 flex items-end justify-between px-[28px] pb-[6px] text-[15px] font-semibold text-foreground dark:text-[#ECEDEE]"
+              >
+                <span>11:36</span>
+                <div class="flex items-center gap-[6px]">
+                  <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor">
+                    <rect x="0" y="7" width="3" height="4" rx="1" />
+                    <rect x="4.5" y="5" width="3" height="6" rx="1" />
+                    <rect x="9" y="2.5" width="3" height="8.5" rx="1" />
+                    <rect x="13.5" y="0" width="3" height="11" rx="1" opacity=".35" />
+                  </svg>
+                  <svg width="16" height="11" viewBox="0 0 16 12" fill="currentColor">
+                    <path d="M8 10.5 5.5 8a3.5 3.5 0 0 1 5 0L8 10.5Z" />
+                    <path d="M3.8 6.3a6 6 0 0 1 8.4 0" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" />
+                  </svg>
+                  <span
+                    class="ml-[2px] rounded-[5px] border border-default-300 px-[4px] text-[12px] leading-[15px] dark:border-[#52525b]"
+                    >50</span
+                  >
+                </div>
+              </div>
+
+              <!-- 应用栏 -->
+              <div class="h-[56px] shrink-0 flex items-center justify-between px-[18px]">
+                <div class="flex items-center gap-[10px]">
+                  <div
+                    class="flex h-[34px] w-[34px] items-center justify-center rounded-[10px] bg-primary-500 shadow-[0_3px_12px_rgba(0,111,238,.35)]"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round">
+                      <rect x="7" y="3" width="10" height="18" rx="2" />
+                      <path d="M10 17h4" />
+                    </svg>
+                  </div>
+                  <span class="text-[17px] font-semibold tracking-[.2px] text-foreground dark:text-[#ECEDEE]"
+                    >不徒步 · nohike</span
+                  >
+                </div>
+                <div class="flex items-center gap-[8px]">
+                  <button
+                    class="flex h-[34px] w-[34px] items-center justify-center rounded-full border border-default-300 bg-[#18181b] text-default-400 dark:border-[#52525b] dark:text-[#a1a1aa]"
+                  >
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round">
+                      <path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" stroke="none" />
+                      <path d="M12 3a9 9 0 0 1 0 18" />
+                    </svg>
+                  </button>
+                  <button
+                    class="h-[34px] min-w-[44px] rounded-full border border-default-300 bg-[#18181b] px-[12px] text-[13px] font-semibold leading-none text-default-400 dark:border-[#52525b] dark:text-[#a1a1aa]"
+                  >
+                    EN
+                  </button>
+                </div>
+              </div>
+
+              <!-- 卡片 1:门开着 -->
+              <div class="mt-[6px] px-[16px]">
+                <div
+                  class="hero-card rounded-[14px] border border-default-200 bg-background p-[16px] dark:border-[#3f3f46] dark:bg-[#18181b]"
+                >
+                  <div class="flex items-start justify-between gap-[10px]">
+                    <div class="flex flex-wrap items-baseline gap-[8px]">
+                      <span class="text-[17px] font-semibold text-foreground dark:text-[#ECEDEE]"
+                        >IT 办公室</span
+                      >
+                      <span class="text-[13px] text-default-400 dark:text-[#8b8b93]">行政楼 A 座 2F</span>
+                    </div>
+                    <div class="flex shrink-0 gap-[6px]">
+                      <span
+                        class="rounded-md bg-success-100 px-[8px] py-[2px] text-[12px] font-medium text-success-700 dark:bg-[#0f3d2c] dark:text-[#4ade80]"
+                        >传感器在线</span
+                      >
+                      <span
+                        class="rounded-md border border-default-200 px-[8px] py-[2px] text-[12px] text-default-500 dark:border-[#3f3f46] dark:text-[#a1a1aa]"
+                        >电量 87%</span
+                      >
+                    </div>
+                  </div>
+
+                  <div class="mt-[14px] flex items-center gap-[13px]">
+                    <div
+                      class="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-full bg-success-100 dark:bg-[#0f3d2c]"
+                    >
+                      <span class="text-[22px] leading-none">🔓</span>
+                    </div>
+                    <div class="min-w-0">
+                      <div class="text-[22px] font-bold tracking-[.3px] text-success-700 dark:text-[#4ade80]">
+                        门开着
+                      </div>
+                      <p class="mt-[2px] text-[13px] text-default-500 dark:text-[#a1a1aa]">
+                        IT 有人在，直接过来就行
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="mt-[14px] h-px w-full bg-default-100 dark:bg-[#3f3f46]"></div>
+
+                  <div class="mt-[12px] flex flex-wrap gap-[16px] text-[12px] text-default-500 dark:text-[#a1a1aa]">
+                    <span>最后变化:<b class="font-medium text-default-600 dark:text-[#d4d4d8]">刚刚</b></span>
+                    <span>心跳:<b class="font-medium text-default-600 dark:text-[#d4d4d8]">刚刚</b></span>
+                    <span>今天:开 <b class="font-medium text-default-600 dark:text-[#d4d4d8]">1</b> 次 / 关 <b class="font-medium text-default-600 dark:text-[#d4d4d8]">0</b> 次</span>
+                  </div>
+
+                  <div class="mt-[13px]">
+                    <div class="flex h-[6px] gap-[2px] overflow-hidden rounded-full bg-default-100 dark:bg-[#27272a]">
+                      <div class="w-[14%] rounded-full bg-default-200 dark:bg-[#3f3f46]"></div>
+                      <div class="w-[3%] rounded-full bg-success-500"></div>
+                      <div class="w-[8%] rounded-full bg-default-200 dark:bg-[#3f3f46]"></div>
+                      <div class="w-[6%] rounded-full bg-success-500"></div>
+                      <div class="w-[12%] rounded-full bg-default-200 dark:bg-[#3f3f46]"></div>
+                      <div class="w-[4%] rounded-full bg-success-500"></div>
+                      <div class="w-[10%] rounded-full bg-default-200 dark:bg-[#3f3f46]"></div>
+                      <div class="w-[5%] rounded-full bg-success-500"></div>
+                      <div class="w-[38%] rounded-full bg-default-200 dark:bg-[#3f3f46]"></div>
+                    </div>
+                    <div class="mt-[5px] flex justify-between text-[10px] text-default-400 dark:text-[#8b8b93]">
+                      <span>00:00</span>
+                      <span>现在</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 卡片 2:状态未知 -->
+                <div
+                  class="hero-card mt-[12px] rounded-[14px] border border-default-200 bg-background p-[16px] dark:border-[#3f3f46] dark:bg-[#18181b]"
+                >
+                  <div class="flex items-start justify-between gap-[10px]">
+                    <div class="flex flex-wrap items-baseline gap-[8px]">
+                      <span class="text-[17px] font-semibold text-foreground dark:text-[#ECEDEE]">机房</span>
+                      <span class="text-[13px] text-default-400 dark:text-[#8b8b93]">行政楼 A 座 1F</span>
+                    </div>
+                    <span
+                      class="shrink-0 rounded-md bg-warning-100 px-[8px] py-[2px] text-[12px] font-medium text-warning-700 dark:bg-[#3d2f0b] dark:text-[#facc15]"
+                      >传感器离线</span
+                    >
+                  </div>
+
+                  <div class="mt-[14px] flex items-center gap-[13px]">
+                    <div
+                      class="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-full bg-warning-100 dark:bg-[#3d2f0b]"
+                    >
+                      <span class="text-[22px] leading-none">⚠️</span>
+                    </div>
+                    <div class="min-w-0">
+                      <div class="text-[22px] font-bold tracking-[.3px] text-warning-700 dark:text-[#facc15]">
+                        状态未知
+                      </div>
+                      <p class="mt-[2px] text-[13px] text-default-500 dark:text-[#a1a1aa]">
+                        传感器没上线，状态未知 —— 请先联系 IT
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="mt-[14px] h-px w-full bg-default-100 dark:bg-[#3f3f46]"></div>
+
+                  <div class="mt-[12px] flex flex-wrap gap-[16px] text-[12px] text-default-500 dark:text-[#a1a1aa]">
+                    <span>最后变化:<b class="font-medium text-default-600 dark:text-[#d4d4d8]">无记录</b></span>
+                    <span>心跳:<b class="font-medium text-default-600 dark:text-[#d4d4d8]">无记录</b></span>
+                    <span>今天:开 <b class="font-medium text-default-600 dark:text-[#d4d4d8]">0</b> 次 / 关 <b class="font-medium text-default-600 dark:text-[#d4d4d8]">0</b> 次</span>
+                  </div>
+
+                  <div class="mt-[13px]">
+                    <div class="flex h-[6px] gap-[2px] overflow-hidden rounded-full bg-default-100 dark:bg-[#27272a]">
+                      <div class="flex-1 rounded-full bg-[repeating-linear-gradient(45deg,#e4e4e7,#e4e4e7_3px,#d4d4d8_3px,#d4d4d8_6px)] dark:bg-[repeating-linear-gradient(45deg,#27272a,#27272a_3px,#3f3f46_3px,#3f3f46_6px)]"></div>
+                    </div>
+                    <div class="mt-[5px] flex justify-between text-[10px] text-default-400 dark:text-[#8b8b93]">
+                      <span>00:00</span>
+                      <span>现在</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 页脚 -->
+              <div class="mt-auto px-[16px] pb-[22px] pt-[16px] text-center">
+                <p class="m-0 text-[12px] text-default-400 dark:text-[#8b8b93]">一眼知门况，免跑空一趟。</p>
+                <p class="mt-[6px] text-[12px] tracking-[.4px] text-default-500 dark:text-[#a1a1aa]">
+                  Powered By 不徒步 · nohike | IT Dept BIPH
+                </p>
+              </div>
+            </div>
+          </div>
+          <span class="mt-[20px] text-[21px] font-medium text-default-500">暗色</span>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
