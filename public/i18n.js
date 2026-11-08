@@ -65,6 +65,13 @@ const DICT = {
     // 服务端连提示语都没下发时的最后兜底
     unknownHint: '传感器没上线,状态未知 —— 请先联系 IT',
 
+    /* ---- 主题 ---- */
+    themeAuto: '跟随系统',
+    themeLight: '日间',
+    themeDark: '夜间',
+    // 主题按钮的无障碍标签:{mode} 是现在选的,{next} 是点了会变成的
+    themeToggle: '主题:{mode}(点击切换为{next})',
+
     /* ---- 服务端错误(errorKey,和 server/src/index.js 一一对应)---- */
     need_admin_key: '需要管理密钥',
     bad_admin_key: '管理密钥不正确',
@@ -122,6 +129,13 @@ const DICT = {
     description: 'See whether the IT office is open before you walk over.',
     colon: ': ',
     unknownHint: 'Sensor offline, status unknown — please contact IT',
+
+    /* ---- 主题 ---- */
+    themeAuto: 'Follow system',
+    themeLight: 'Day',
+    themeDark: 'Night',
+    // 主题按钮的无障碍标签:{mode} is the current mode, {next} is what a tap switches to
+    themeToggle: 'Theme: {mode} (tap to switch to {next})',
 
     /* ---- 服务端错误(errorKey,和 server/src/index.js 一一对应)---- */
     need_admin_key: 'Admin key required',

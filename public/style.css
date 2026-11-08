@@ -1,18 +1,116 @@
+/* IT 办公室门磁看板 —— 样式
+ *
+ * ★ 配色一律走 CSS 变量,不许在规则里直接写颜色。
+ *   深色是基准值,浅色主题在下面覆盖同一批变量。
+ *   以前颜色散在各处(同一个"关着"的灰在三个地方各写一遍),
+ *   换主题就得一个一个改,漏一个就花一块。
+ */
+
+/* ---------------- 设计变量 ---------------- */
+
 :root {
+  color-scheme: dark;
+
+  /* 背景 */
   --bg: #0b0f14;
   --bg-card: #141b23;
   --bg-card-2: #1b242e;
+  /* 顶栏渐变的透明端 —— 必须是背景色的透明版,否则浅色主题下会留一条黑边 */
+  --bg-fade: rgba(11, 15, 20, 0);
   --line: #24303c;
+
+  /* 文字 */
   --text: #e6edf3;
   --text-dim: #8b9bab;
+  --text-strong: #b9c4d0;
+  --text-faint: #5c6a79;
+
+  /* 状态色 —— 每个状态一整套:本体 / 浅底 / 文字 / 描边 */
   --green: #2ea043;
   --green-soft: rgba(46, 160, 67, 0.14);
+  --green-text: #56d364;
+  --green-line: rgba(46, 160, 67, 0.4);
+
   --slate: #6e7c8c;
   --slate-soft: rgba(110, 124, 140, 0.16);
+  --slate-text: #c3ccd6;
+
   --amber: #d29922;
   --amber-soft: rgba(210, 153, 34, 0.16);
+  --amber-text: #e3b341;
+  --amber-line: rgba(210, 153, 34, 0.4);
+
+  --purple: #a371f7;
+  --purple-soft: rgba(163, 113, 247, 0.14);
+  --purple-line: rgba(163, 113, 247, 0.45);
+
+  --link: #58a6ff;
+
+  /* 24 小时时间轴 */
+  --seg-closed: #394653;
+  --seg-unknown-a: #2b3743;
+  --seg-unknown-b: #202a34;
+
+  /* 其它 */
+  --scrim: rgba(0, 0, 0, 0.72);
+  --dot-shadow: rgba(110, 124, 140, 0.15);
+  --logo-shadow: rgba(31, 111, 235, 0.35);
+
   --radius: 16px;
   --safe-b: env(safe-area-inset-bottom, 0px);
+}
+
+/*
+ * 浅色主题。
+ *
+ * 触发方式有两种:
+ *   ① 用户手动选了「日间」→ <html data-theme="light">
+ *   ② 用户选了「跟随系统」,而系统是浅色 → 内联脚本也会写 data-theme="light"
+ * 两条路最后都落到这一段,所以配色只认 data-theme 一个开关。
+ */
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: #f1f4f8;
+  --bg-card: #ffffff;
+  --bg-card-2: #e7ecf1;
+  --bg-fade: rgba(241, 244, 248, 0);
+  --line: #d8dee6;
+
+  --text: #1b2430;
+  --text-dim: #57626f;
+  --text-strong: #3a4552;
+  --text-faint: #78838f;
+
+  /* 白底上颜色要更深才看得清:深色版的 #2ea043 在白底上只有 3:1 出头,
+     换成 #1a7f37 才够 4.5:1(正文对比度)。 */
+  --green: #1a7f37;
+  --green-soft: rgba(26, 127, 55, 0.12);
+  --green-text: #146c2e;
+  --green-line: rgba(26, 127, 55, 0.35);
+
+  --slate: #6b7785;
+  --slate-soft: rgba(107, 119, 133, 0.14);
+  --slate-text: #57606a;
+
+  --amber: #8a6100;
+  --amber-soft: rgba(138, 97, 0, 0.12);
+  --amber-text: #8a6100;
+  --amber-line: rgba(138, 97, 0, 0.35);
+
+  --purple: #7c4dcc;
+  --purple-soft: rgba(124, 77, 204, 0.12);
+  --purple-line: rgba(124, 77, 204, 0.35);
+
+  --link: #0a63c9;
+
+  --seg-closed: #c9d1d9;
+  --seg-unknown-a: #e3e8ed;
+  --seg-unknown-b: #d2dae1;
+
+  --scrim: rgba(23, 31, 40, 0.45);
+  --dot-shadow: rgba(107, 119, 133, 0.2);
+  --logo-shadow: rgba(31, 111, 235, 0.28);
 }
 
 * {
@@ -50,7 +148,7 @@ body {
   justify-content: space-between;
   gap: 12px;
   padding: calc(14px + env(safe-area-inset-top, 0px)) 2px 12px;
-  background: linear-gradient(var(--bg) 72%, rgba(11, 15, 20, 0));
+  background: linear-gradient(var(--bg) 72%, var(--bg-fade));
 }
 
 .topbar__title {
@@ -68,7 +166,7 @@ body {
   height: 34px;
   flex: none;
   border-radius: 10px;
-  box-shadow: 0 3px 12px rgba(31, 111, 235, 0.35);
+  box-shadow: 0 3px 12px var(--logo-shadow);
   display: block;
   object-fit: cover;
 }
@@ -88,7 +186,7 @@ body {
   letter-spacing: 0.2px;
 }
 
-/* 页头右侧的一排按钮:管理 / 语言 / 连接状态 */
+/* 页头右侧的一排按钮:主题 / 语言 / 连接状态 */
 .topbar__actions {
   flex: none;
   display: flex;
@@ -128,12 +226,48 @@ body {
   cursor: pointer;
 }
 
+/*
+ * 主题切换按钮。
+ *
+ * 图标表示的是「当前选的是哪一种」,不是「点了会变成哪一种」——
+ * 三种模式循环切换,文字(aria-label)会写清楚现在是什么、点了变什么。
+ * 三个图标都在 HTML 里,靠 data-theme-mode 决定显示哪个。
+ */
+.topbar__theme {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+  color: var(--text-dim);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.topbar__theme:active {
+  transform: scale(0.97);
+}
+
+.topbar__theme-ico {
+  width: 18px;
+  height: 18px;
+  display: none;
+}
+
+:root[data-theme-mode='auto'] .topbar__theme-ico--auto,
+:root[data-theme-mode='light'] .topbar__theme-ico--light,
+:root[data-theme-mode='dark'] .topbar__theme-ico--dark {
+  display: block;
+}
+
 .dot {
   width: 10px;
   height: 10px;
   border-radius: 50%;
   background: var(--slate);
-  box-shadow: 0 0 0 3px rgba(110, 124, 140, 0.15);
+  box-shadow: 0 0 0 3px var(--dot-shadow);
 }
 
 .dot--on {
@@ -219,13 +353,13 @@ body {
 
 .badge--online {
   color: var(--green);
-  border-color: rgba(46, 160, 67, 0.4);
+  border-color: var(--green-line);
   background: var(--green-soft);
 }
 
 .badge--offline {
   color: var(--amber);
-  border-color: rgba(210, 153, 34, 0.4);
+  border-color: var(--amber-line);
   background: var(--amber-soft);
 }
 
@@ -239,15 +373,15 @@ body {
 /* 电量偏低:要换电池了 —— 对蓝牙门磁来说,这是唯一能提前发现的信号 */
 .badge--warn {
   color: var(--amber);
-  border-color: rgba(210, 153, 34, 0.5);
+  border-color: var(--amber-line);
   background: var(--amber-soft);
   font-weight: 600;
 }
 
 .badge--override {
-  color: #a371f7;
-  border-color: rgba(163, 113, 247, 0.45);
-  background: rgba(163, 113, 247, 0.14);
+  color: var(--purple);
+  border-color: var(--purple-line);
+  background: var(--purple-soft);
 }
 
 .door__state {
@@ -286,13 +420,13 @@ body {
 }
 
 .door--open .state__title {
-  color: #56d364;
+  color: var(--green-text);
 }
 .door--closed .state__title {
-  color: #c3ccd6;
+  color: var(--slate-text);
 }
 .door--unknown .state__title {
-  color: #e3b341;
+  color: var(--amber-text);
 }
 
 .state__hint {
@@ -309,7 +443,7 @@ body {
   border: none;
   background: none;
   font: inherit;
-  color: #58a6ff;
+  color: var(--link);
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;
@@ -329,7 +463,7 @@ body {
 }
 
 .door__meta b {
-  color: #b9c4d0;
+  color: var(--text-strong);
   font-weight: 500;
 }
 
@@ -355,17 +489,17 @@ body {
   background: var(--green);
 }
 .timeline__seg--closed {
-  background: #394653;
+  background: var(--seg-closed);
 }
 /* 时间轴里的"未知"是"这段时间没有数据",不是告警,所以用暗灰条纹,
    避免和卡片上的琥珀色告警混淆 */
 .timeline__seg--unknown {
   background: repeating-linear-gradient(
     45deg,
-    #2b3743,
-    #2b3743 3px,
-    #202a34 3px,
-    #202a34 6px
+    var(--seg-unknown-a),
+    var(--seg-unknown-a) 3px,
+    var(--seg-unknown-b) 3px,
+    var(--seg-unknown-b) 6px
   );
 }
 
@@ -374,7 +508,7 @@ body {
   justify-content: space-between;
   margin-top: 5px;
   font-size: 10px;
-  color: #5c6a79;
+  color: var(--text-faint);
 }
 
 /* ---------------- 骨架屏 ---------------- */
@@ -403,7 +537,7 @@ body {
 .footer__hint {
   margin: 0 0 8px;
   font-size: 12px;
-  color: #5c6a79;
+  color: var(--text-faint);
 }
 
 /* 品牌署名 —— 页脚底部那一行(以前这里是「管理 v1.0.0」) */
@@ -424,7 +558,7 @@ body {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background: rgba(0, 0, 0, 0.72);
+  background: var(--scrim);
   backdrop-filter: blur(2px);
 }
 
@@ -457,7 +591,8 @@ body {
   cursor: pointer;
 }
 
-/* 二维码是白底黑码,留一圈白边,不然在深色背景上扫不出来 */
+/* 二维码是白底黑码,留一圈白边,不然在深色背景上扫不出来。
+   浅色主题下卡片也是白的,加一道描边免得糊成一块。 */
 .qr-modal__img {
   display: block;
   width: 100%;
@@ -466,6 +601,7 @@ body {
   padding: 10px;
   border-radius: 12px;
   background: #fff;
+  border: 1px solid var(--line);
 }
 
 .qr-modal__caption {

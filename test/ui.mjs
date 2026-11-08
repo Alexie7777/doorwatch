@@ -275,6 +275,12 @@ try {
     mobile: true,
   });
 
+  // 默认按「系统是深色」跑,跟看板一直以来的观感一致。
+  // 主题那一节里再把系统切来切去,测跟随/手动两种行为。
+  await cdp.send('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-color-scheme', value: 'dark' }],
+  });
+
   const loaded = cdp.once('Page.loadEventFired');
   await cdp.send('Page.navigate', { url: BASE });
   await loaded;
@@ -428,6 +434,14 @@ try {
     Boolean(appJsUrl && /\/v\/[^/]+\/app\.js$/.test(appJsUrl)),
     appJsUrl ?? '未捕获到 app.js 请求',
   );
+  // theme.js 是 app.js 的模块依赖,同样的道理:不带戳就会被代理留着旧副本,
+  // 症状是「主题按钮点了没反应」或者「切换后又跳回旧配色」。
+  const themeJsUrl = (resourceUrls ?? []).find((u) => u.includes('theme.js'));
+  check(
+    '★ 浏览器请求的 theme.js 带版本前缀',
+    Boolean(themeJsUrl && /\/v\/[^/]+\/theme\.js$/.test(themeJsUrl)),
+    themeJsUrl ?? '未捕获到 theme.js 请求',
+  );
   const zhFooterHint = await cdp.eval(
     'document.querySelector("#footer-hint")?.textContent?.trim()',
   );
@@ -558,6 +572,154 @@ try {
   check('★ 再点一次变回中文「门开着」', backZh === '门开着', `实际="${backZh}"`);
   const langBack = await cdp.eval('document.documentElement.lang');
   check('documentElement.lang 变回 zh', langBack === 'zh', `实际="${langBack}"`);
+
+  // 5. 主题:跟随系统 / 日间 / 夜间
+  console.log('\n[ui] 主题');
+
+  /** 读当前的主题状态 */
+  const themeState = () =>
+    cdp.eval(`
+      (() => {
+        const d = document.documentElement;
+        return {
+          mode: d.getAttribute('data-theme-mode'),
+          theme: d.getAttribute('data-theme'),
+          bg: getComputedStyle(document.body).backgroundColor,
+          meta: document.querySelector('meta[name="theme-color"]')?.getAttribute('content') ?? null,
+          stored: localStorage.getItem('dw_theme'),
+          label: document.querySelector('#theme-toggle')?.getAttribute('aria-label') ?? null,
+        };
+      })()
+    `);
+
+  /** 刷新页面并等看板重新渲染出来 */
+  const reloadAndWait = async () => {
+    const loaded = cdp.once('Page.loadEventFired');
+    await cdp.send('Page.reload', { ignoreCache: true });
+    await loaded;
+    for (let i = 0; i < 40; i++) {
+      const n = await cdp.eval('document.querySelectorAll("article.door").length');
+      if (n === 2) break;
+      await sleep(250);
+    }
+  };
+
+  /** 背景色的相对亮度 —— 用来断言"到底是亮是暗" */
+  const lum = (rgb) => {
+    const m = String(rgb).match(/[\d.]+/g);
+    if (!m) return -1;
+    return 0.2126 * Number(m[0]) + 0.7152 * Number(m[1]) + 0.0722 * Number(m[2]);
+  };
+
+  // A. 没有本地选择 + 系统是深色 → 跟随系统,深色
+  await cdp.eval('localStorage.removeItem("dw_theme")');
+  await reloadAndWait();
+  const th1 = await themeState();
+  check('★ 默认是「跟随系统」', th1.mode === 'auto', `实际="${th1.mode}"`);
+  check('★ 系统是深色 → 页面是深色', th1.theme === 'dark', `实际="${th1.theme}"`);
+  check('★ 深色模式下背景确实是深的', lum(th1.bg) < 60, `背景="${th1.bg}"`);
+  check('★ theme-color 跟着主题走', th1.meta === '#0b0f14', `实际="${th1.meta}"`);
+
+  // ★ 不闪屏:主题必须在第一帧之前就定好。
+  //
+  //   做不到的话,刷新时会先按深色画一帧再切成浅色 —— 屏幕"闪一下"。
+  //   办法是把定主题的脚本内联到 <head> 里、排在 <body> 之前,
+  //   这样第一帧渲染时就带着正确的 data-theme。
+  //
+  //   这条是结构性的:内联脚本位置不对,闪屏就回来了。
+  const pageHtml = await (await fetch(`${BASE}/`)).text();
+  const headEndAt = pageHtml.indexOf('</head>');
+  const bodyAt = pageHtml.indexOf('<body');
+  const themeScriptAt = pageHtml.indexOf('data-theme-mode');
+  check(
+    '★ 主题在 <head> 里就地定下来(排在 <body> 之前)',
+    themeScriptAt > 0 && themeScriptAt < headEndAt && headEndAt < bodyAt,
+    `脚本位置=${themeScriptAt} </head>=${headEndAt} <body>=${bodyAt}`,
+  );
+  check(
+    '★ 内联脚本同时管 data-theme 和 theme-color',
+    pageHtml.includes('data-theme') && pageHtml.includes('theme-color'),
+  );
+
+  // 动态:页面一加载出来,背景色就已经是目标主题(不是等 app.js 跑完才变)
+  const firstBg = await cdp.eval('getComputedStyle(document.body).backgroundColor');
+  check('★ 页面一加载出来背景色就是深色', lum(firstBg) < 60, `背景="${firstBg}"`);
+
+  // B. 系统切到浅色 → 页面立刻跟着变浅(不用刷新)
+  await cdp.send('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-color-scheme', value: 'light' }],
+  });
+  await sleep(500);
+  const th2 = await themeState();
+  check('★ 系统切浅色 → 页面立刻跟着变浅色', th2.theme === 'light', `实际="${th2.theme}"`);
+  check('★ 浅色模式下背景确实是亮的', lum(th2.bg) > 200, `背景="${th2.bg}"`);
+  check('★ theme-color 跟着变浅', th2.meta === '#f1f4f8', `实际="${th2.meta}"`);
+
+  // C. 点按钮:跟随系统 → 日间
+  await cdp.eval('document.querySelector("#theme-toggle").click()');
+  await sleep(300);
+  const th3 = await themeState();
+  check('★ 点一下:跟随系统 → 日间', th3.mode === 'light' && th3.theme === 'light', `实际="${th3.mode}/${th3.theme}"`);
+  check('★ 主题选择写进了 localStorage', th3.stored === 'light', `实际="${th3.stored}"`);
+  check(
+    '★ 主题按钮的标签写清了当前模式和下一个',
+    /日间/.test(th3.label ?? '') && /夜间/.test(th3.label ?? ''),
+    `实际="${th3.label}"`,
+  );
+
+  // D. 再点:日间 → 夜间(系统此刻是浅色,手动选的必须压过系统)
+  await cdp.eval('document.querySelector("#theme-toggle").click()');
+  await sleep(300);
+  const th4 = await themeState();
+  check('★ 再点:日间 → 夜间', th4.mode === 'dark' && th4.theme === 'dark', `实际="${th4.mode}/${th4.theme}"`);
+  check('★ 手动选了夜间就不跟系统走(系统还是浅色)', th4.theme === 'dark', `实际="${th4.theme}"`);
+
+  // E. 刷新后还是用户选的那个
+  await reloadAndWait();
+  const th5 = await themeState();
+  check('★ 刷新后主题还是用户选的那个', th5.mode === 'dark' && th5.theme === 'dark', `实际="${th5.mode}/${th5.theme}"`);
+
+  // F. 再点:夜间 → 回到跟随系统
+  await cdp.eval('document.querySelector("#theme-toggle").click()');
+  await sleep(300);
+  const th6 = await themeState();
+  check('★ 再点回到「跟随系统」', th6.mode === 'auto', `实际="${th6.mode}"`);
+  check('★ 回到跟随系统就按系统的来(此刻系统是浅色)', th6.theme === 'light', `实际="${th6.theme}"`);
+
+  // G. 英文界面下主题按钮也得是英文
+  await cdp.eval('document.querySelector("#lang-toggle").click()');
+  await sleep(500);
+  const enThemeLabel = await cdp.eval(
+    'document.querySelector("#theme-toggle")?.getAttribute("aria-label") ?? ""',
+  );
+  check(
+    '★ 英文界面下主题按钮也是英文',
+    /Follow system/i.test(enThemeLabel),
+    `实际="${enThemeLabel}"`,
+  );
+  await cdp.eval('document.querySelector("#lang-toggle").click()');
+  await sleep(500);
+
+  // 浅色模式效果图
+  await cdp.send('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-color-scheme', value: 'light' }],
+  });
+  await sleep(500);
+  const shotLight = await cdp.send('Page.captureScreenshot', {
+    format: 'png',
+    captureBeyondViewport: true,
+  });
+  const shotLightPath = path.join(ARTIFACTS, 'dashboard-light.png');
+  fs.writeFileSync(shotLightPath, Buffer.from(shotLight.data, 'base64'));
+  check('浅色模式效果图已生成', fs.existsSync(shotLightPath), shotLightPath);
+
+  // 恢复成深色 —— 后面的截图跟以前一样
+  await cdp.send('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-color-scheme', value: 'dark' }],
+  });
+  await sleep(500);
+  const backDark = await themeState();
+  check('恢复成深色', backDark.theme === 'dark', `实际="${backDark.theme}"`);
 
   // 中文看板截图
   const shotZh = await cdp.send('Page.captureScreenshot', {

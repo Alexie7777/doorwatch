@@ -16,6 +16,43 @@
     <link rel="apple-touch-icon" href="/icon.svg" />
     <link rel="stylesheet" href="/style.css" />
     <title>不徒步 · nohike — IT 办公室状态</title>
+    <script>
+      /*
+       * 主题必须在第一帧渲染**之前**定下来。
+       *
+       * 晚一步的后果:刷新时先按深色画一帧,再切成浅色 —— 就是那种
+       * "屏幕闪一下"的观感,在大屏上尤其明显。
+       *
+       * 所以这里用一段**同步**的、就放在 <head> 里的内联脚本,
+       * 不等 app.js(那是 ES module,天生异步,等它就晚了)。
+       *
+       * 两个属性:
+       *   data-theme-mode —— 用户选的:auto / light / dark
+       *   data-theme      —— 实际生效的:light / dark(选 auto 时要问系统)
+       * 详见 theme.js。
+       */
+      (function () {
+        var d = document.documentElement;
+        var m = null;
+        try {
+          m = localStorage.getItem('dw_theme');
+        } catch (e) {
+          /* 隐私模式:存不了,按跟随系统处理 */
+        }
+        if (m !== 'light' && m !== 'dark') m = 'auto';
+        d.setAttribute('data-theme-mode', m);
+
+        var light =
+          m === 'auto'
+            ? !!(window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches)
+            : m === 'light';
+        d.setAttribute('data-theme', light ? 'light' : 'dark');
+
+        // 手机浏览器的地址栏/状态栏跟着页面底色走
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', light ? '#f1f4f8' : '#0b0f14');
+      })();
+    </script>
   </head>
   <body>
     <header class="topbar">
@@ -32,6 +69,54 @@
         <div class="topbar__brand">不徒步 · nohike</div>
       </div>
       <div class="topbar__actions">
+        <!--
+          主题切换:跟随系统 → 日间 → 夜间 → 跟随系统,循环。
+          图标表示**当前选的是哪一种**(半圆=跟随系统,太阳=日间,月亮=夜间),
+          具体名字和"点了会变什么"由 app.js 写进 aria-label。
+          三个图标都摆在 HTML 里,靠 <html> 上的 data-theme-mode 决定显示哪个。
+        -->
+        <button class="topbar__theme" id="theme-toggle" type="button" aria-label="主题">
+          <svg
+            class="topbar__theme-ico topbar__theme-ico--auto"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" />
+            <path
+              d="M12 3a9 9 0 0 1 0 18"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.7"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <svg
+            class="topbar__theme-ico topbar__theme-ico--light"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="4.4" />
+            <path
+              d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.4 5.4 7 7M17 17l1.6 1.6M18.6 5.4 17 7M7 17l-1.6 1.6"
+            />
+          </svg>
+          <svg
+            class="topbar__theme-ico topbar__theme-ico--dark"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M20.5 14.6A8.9 8.9 0 0 1 9.4 3.5a8.9 8.9 0 1 0 11.1 11.1z" />
+          </svg>
+        </button>
         <!-- 语言切换:按钮上显示的是另一种语言的名字 -->
         <button class="topbar__lang" id="lang-toggle" type="button" aria-label="切换语言">
           EN

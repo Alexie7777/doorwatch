@@ -5,6 +5,7 @@
  */
 
 import { getLang, setLang, t, onLangChange, monthName } from './i18n.js';
+import { initTheme, getThemeMode, setTheme, nextTheme, onThemeChange } from './theme.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -317,6 +318,33 @@ function applyLang() {
   if (desc) desc.setAttribute('content', t('description'));
   const homeTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
   if (homeTitle) homeTitle.setAttribute('content', t('homeTitle'));
+
+  // 主题按钮上的字也是面向用户的,语言变了要跟着变
+  applyTheme();
+}
+
+/* ------------------------------------------------------------------ *
+ * 主题
+ * ------------------------------------------------------------------ */
+
+/**
+ * 刷新主题按钮。
+ *
+ * 图标不用管 —— 三个图标都在 HTML 里,靠 <html> 上的 data-theme-mode
+ * 决定显示哪个(见 style.css)。这儿管的是给读屏软件听的那句话:
+ * 现在选的是哪一种、点一下会变成哪一种。
+ */
+function applyTheme() {
+  const btn = $('#theme-toggle');
+  if (!btn) return;
+  const mode = getThemeMode();
+  const NAME_KEY = { auto: 'themeAuto', light: 'themeLight', dark: 'themeDark' };
+  const label = t('themeToggle', {
+    mode: t(NAME_KEY[mode]),
+    next: t(NAME_KEY[nextTheme(mode)]),
+  });
+  btn.setAttribute('aria-label', label);
+  btn.setAttribute('title', label);
 }
 
 /* ------------------------------------------------------------------ *
@@ -483,8 +511,24 @@ onLangChange(() => {
   render();
 });
 
+// 主题切换:跟随系统 → 日间 → 夜间 → 跟随系统,循环
+$('#theme-toggle')?.addEventListener('click', () => {
+  setTheme(nextTheme());
+});
+
+// 主题变了要刷新按钮上的标签(系统自动切深色时也会走到这里)
+onThemeChange(() => {
+  applyTheme();
+});
+
 // 先把静态文案刷成当前语言,再拉数据
 applyLang();
+
+// 主题要在第一帧之前就定好 —— index.html 的内联脚本已经处理过了,
+// 这里再跑一遍是为了把 localStorage 里的选择同步过来,
+// 并挂上「系统主题变了」的监听(auto 模式下要跟着系统走)。
+initTheme();
+applyTheme();
 
 loadDoors();
 connectSSE();

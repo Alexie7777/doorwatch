@@ -11,6 +11,7 @@ const CACHE = 'doorwatch' + '__STAMP__'.replace(/[^\w.-]/g, '-');
  * 只预缓存外壳。style.css / app.js 在 index.html 里带版本前缀,
  * 运行时按带前缀的 URL 缓存,避免同一份资源在缓存里存两份。
  * i18n.js 是 app.js 的模块依赖,同样要预缓存,离线才开得了。
+ * theme.js 也是 app.js 的模块依赖 —— 少了它,离线时主题按钮就点不动了。
  * wechat-qr.jpg 也预缓存 —— 断网时同事照样能扫到值班微信。
  *
  * __STAMP__ 是占位符:服务端发这个文件时会把它换成当前这一版的版本前缀
@@ -23,6 +24,7 @@ const SHELL = [
   '__STAMP__/icon.svg',
   '__STAMP__/manifest.webmanifest',
   '__STAMP__/i18n.js',
+  '__STAMP__/theme.js',
   '__STAMP__/app.js',
   '__STAMP__/style.css',
   '__STAMP__/wechat-qr.jpg',
