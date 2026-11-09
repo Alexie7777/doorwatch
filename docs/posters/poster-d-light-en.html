@@ -1,0 +1,99 @@
+<!DOCTYPE html><html lang="en"><head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1754, height=1240, initial-scale=1.0">
+  <script src="assets/tailwind.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap');
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', 'Noto Sans SC', sans-serif;
+      background-color: #f4f4f5;
+    }
+    .card-shadow {
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .phone-shadow {
+      filter: drop-shadow(0 20px 50px rgba(0,0,0,0.08));
+    }
+    .bullet-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 9999px;
+      flex-shrink: 0;
+      margin-top: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="w-[1754px] h-[1240px] overflow-hidden relative flex" data-sd-id="1">
+    
+    <!-- LEFT ZONE: Phone Visual (46%) -->
+    <div class="w-[46%] h-full flex flex-col items-center justify-center p-20" data-sd-id="2">
+      <div class="relative flex flex-col items-center" data-sd-id="3">
+        <img src="assets/phone-angle-light-en.png" class="phone-shadow rotate-[-10deg] w-[580px] h-auto object-contain" alt="iPhone Dashboard Preview" data-sd-id="4">
+        <p class="mt-16 text-[#71717a] text-[22px] tracking-wide font-medium" data-sd-id="5">Scan — this is what your phone shows</p>
+      </div>
+    </div>
+
+    <!-- RIGHT ZONE: Content Card (54%) -->
+    <div class="w-[54%] h-full flex items-center justify-start pr-[80px]" data-sd-id="6">
+      <div class="bg-white border border-[#d4d4d8] rounded-[28px] card-shadow w-full p-[56px] flex flex-col" data-sd-id="7">
+        
+        <!-- Brand Line -->
+        <div class="text-[#006fee] text-[22px] font-semibold mb-8" data-sd-id="8">
+          不徒步 · nohike
+        </div>
+
+        <!-- Headline -->
+        <h1 class="text-[#11181c] text-[56px] leading-[1.15] font-bold tracking-tight mb-4" data-sd-id="9">
+          Glance before you leave,<br>
+          no need to be grieved.
+        </h1>
+
+        <!-- Subhead -->
+        <p class="text-[#52525b] text-[28px] font-medium mb-12" data-sd-id="10">
+          See if the IT office is open before you walk over.
+        </p>
+
+        <!-- Bullets -->
+        <div class="space-y-6 mb-14" data-sd-id="11">
+          <div class="flex items-start gap-4" data-sd-id="12">
+            <div class="bullet-dot bg-[#17c964]" data-sd-id="13"></div>
+            <span class="text-[#11181c] text-[24px]" data-sd-id="14">Open or closed — clear at a glance.</span>
+          </div>
+          <div class="flex items-start gap-4" data-sd-id="15">
+            <div class="bullet-dot bg-[#006fee]" data-sd-id="16"></div>
+            <span class="text-[#11181c] text-[24px]" data-sd-id="17">If someone's there, go. If not, don't bother.</span>
+          </div>
+          <div class="flex items-start gap-4" data-sd-id="18">
+            <div class="bullet-dot bg-[#f5a524]" data-sd-id="19"></div>
+            <span class="text-[#11181c] text-[24px]" data-sd-id="20">Can't tell? It says "Unknown". It never guesses.</span>
+          </div>
+        </div>
+
+        <!-- QR Block -->
+        <div class="flex items-center gap-8 bg-[#f4f4f5] rounded-[20px] p-8 mb-10" data-sd-id="21">
+          <div class="bg-white p-4 rounded-[12px] shadow-sm" data-sd-id="22">
+            <img src="assets/qr-nohike.png" class="w-[220px] h-[220px]" alt="QR Code" data-sd-id="23">
+          </div>
+          <div class="flex flex-col" data-sd-id="24">
+            <p class="text-[#71717a] text-[18px] mb-2" data-sd-id="25">Scan with your camera or WeChat</p>
+            <p class="text-[#11181c] text-[26px] font-bold tracking-tight" data-sd-id="26">http://nohike.biph.com/</p>
+            <p class="text-[#71717a] text-[18px] mt-1" data-sd-id="27">Only reachable on the school network</p>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="pt-8 border-t border-[#e4e4e7]" data-sd-id="28">
+          <p class="text-[#71717a] text-[18px] font-medium" data-sd-id="29">
+            Powered By 不徒步 · nohike | IT Dept BIPH
+          </p>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+</body></html>
